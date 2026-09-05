@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">逐行翻译</string>
+    <string name="home_title">今日翻译</string>
+    <string name="add_text">添加文本</string>
+    <string name="settings">设置</string>
+    <string name="export">导出</string>
+    <string name="edit">修改</string>
+    <string name="view">查看</string>
+    <string name="translate">翻译</string>
+    <string name="next">下一句</string>
+    <string name="ai_translate">AI翻译</string>
+    <string name="paste_original">粘贴原文</string>
+    <string name="copy">复制</string>
+    <string name="more">更多</string>
+    <string name="lock">锁定分割线</string>
+    <string name="unlock">解锁分割线</string>
+    <string name="translation_done">翻译完毕</string>
+    <string name="web_terminal">Web终端服务</string>
+    <string name="web_terminal_desc">为局域网内设备提供可访问的 Web 终端</string>
+    <string name="add_provider">添加API提供商</string>
+    <string name="usage_stats">用量与费用</string>
+</resources>
