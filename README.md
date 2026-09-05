@@ -78,3 +78,6 @@
 ## 说明
 - Web 终端页面依赖 xterm.js（CDN），首次打开页面需局域网设备能访问互联网；如需离线可用，可自行将 xterm.js 打包进 assets。
 - 本应用的 Web 终端运行在应用的本地 shell 中（非 root），仅具备应用进程的权限。
+
+## 许可
+本项目使用 [MIT License](LICENSE) 开源。
