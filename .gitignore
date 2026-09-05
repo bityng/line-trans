@@ -17,6 +17,7 @@ captures/
 *.apk.idsig
 *.keystore
 !debug.keystore
+keystore.properties
 
 # OS
 .DS_Store
