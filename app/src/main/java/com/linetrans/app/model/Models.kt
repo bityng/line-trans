@@ -6,9 +6,14 @@ enum class UnitMode { LINE, SENTENCE }
 
 data class TranslationUnit(
     var source: String,
-    var translation: String = ""
+    var translation: String = "",
+    var done: Boolean = false
 ) {
+    /** 是否真的有译文（用于导出时决定“已翻译”）。 */
     val isTranslated: Boolean get() = translation.isNotBlank()
+
+    /** 是否已处理（翻译或标记为“不需要翻译/跳过”），用于进度统计。 */
+    val isDone: Boolean get() = done || translation.isNotBlank()
 }
 
 data class TranslationDoc(
@@ -22,7 +27,7 @@ data class TranslationDoc(
     var updatedAt: Long = System.currentTimeMillis()
 ) {
     val totalCount: Int get() = units.size
-    val translatedCount: Int get() = units.count { it.isTranslated }
+    val translatedCount: Int get() = units.count { it.isDone }
     val progress: Float get() = if (totalCount == 0) 0f else translatedCount.toFloat() / totalCount
 
     companion object {

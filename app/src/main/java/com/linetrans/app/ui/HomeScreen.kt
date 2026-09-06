@@ -112,7 +112,7 @@ fun HomeScreen(onOpenDoc: (String) -> Unit, onOpenSettings: () -> Unit) {
                     Text("逐行翻译", style = MaterialTheme.typography.titleLarge)
                     val totalTranslated = DocRepository.docs.sumOf { it.translatedCount }
                     val totalUnits = DocRepository.docs.sumOf { it.totalCount }
-                    Text("今日目标：已翻译 " + totalTranslated + " / " + totalUnits + " 句", style = MaterialTheme.typography.bodySmall)
+                    Text("今日目标：已完成 " + totalTranslated + " / " + totalUnits + " 句", style = MaterialTheme.typography.bodySmall)
                 }
                 Divider()
                 Text("文件夹", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
@@ -261,7 +261,7 @@ private fun TotalStatsCard() {
             Text("今日翻译" + if (goal > 0) " · 目标 " + goal + " 句" else "", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
             Text(
-                "文档 " + docs.size + " 篇 · 已翻译 " + totalTranslated + " / " + totalUnits + " 句",
+                "文档 " + docs.size + " 篇 · 已完成 " + totalTranslated + " / " + totalUnits + " 句",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(Modifier.height(8.dp))
@@ -306,7 +306,7 @@ private fun DocCard(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text("已翻译 " + doc.translatedCount + " / " + doc.totalCount + " 句", style = MaterialTheme.typography.bodySmall)
+                    Text("已完成 " + doc.translatedCount + " / " + doc.totalCount + " 句", style = MaterialTheme.typography.bodySmall)
                 }
                 IconButton(onClick = { onToggle() }) {
                     Icon(Icons.Default.ExpandMore, contentDescription = "展开",

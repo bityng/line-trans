@@ -102,13 +102,27 @@ fun TranslationScreen(docId: String, onBack: () -> Unit) {
         DocRepository.save(doc)
     }
 
+    fun markDone() {
+        val u = currentUnit() ?: return
+        u.done = true
+        DocRepository.save(doc)
+    }
+
+    fun skipCurrent() {
+        val u = currentUnit() ?: return
+        saveCurrent("")
+        u.done = true
+        DocRepository.save(doc)
+        if (currentIndex < doc.units.size - 1) currentIndex++ else showDone = true
+    }
+
     fun switchMode(newMode: UnitMode) {
         if (newMode == doc.unitMode) return
         val source = if (doc.sourceText.isNotBlank()) doc.sourceText else doc.units.joinToString("\n") { it.source }
-        val oldBySource = doc.units.associate { it.source to it.translation }
+        val oldBySource = doc.units.associate { it.source to it }
         val newUnits = TextParser.parse(source, newMode).map { u ->
-            val found = oldBySource[u.source]
-            if (found != null) TranslationUnit(u.source, found) else u
+            val old = oldBySource[u.source]
+            if (old != null) TranslationUnit(u.source, old.translation, old.done) else u
         }.toMutableList()
         doc.units.clear()
         doc.units.addAll(newUnits)
@@ -148,6 +162,7 @@ fun TranslationScreen(docId: String, onBack: () -> Unit) {
                 )
                 translatedText = result.text
                 u.translation = result.text
+                u.done = true
                 val model = settings.activeModel
                 val cost = if (model != null) CostCalculator.costFor(model, result.promptTokens, result.completionTokens) else 0.0
                 usage = usage.copy(
@@ -171,7 +186,7 @@ fun TranslationScreen(docId: String, onBack: () -> Unit) {
                     Column {
                         Text(doc.name, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "已翻译 " + doc.translatedCount + " / " + doc.totalCount + " 句" +
+                            "已完成 " + doc.translatedCount + " / " + doc.totalCount + " 句" +
                                 (if (mode == UnitMode.SENTENCE) " · 逐句" else " · 逐行"),
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -188,11 +203,11 @@ fun TranslationScreen(docId: String, onBack: () -> Unit) {
                         Icon(Icons.Default.SkipPrevious, contentDescription = "上一句")
                     }
                     TextButton(onClick = {
+                        saveCurrent(translatedText)
+                        markDone()
                         if (currentIndex < doc.units.size - 1) {
-                            saveCurrent(translatedText)
                             currentIndex++
                         } else {
-                            saveCurrent(translatedText)
                             showDone = true
                         }
                     }) {
@@ -285,6 +300,9 @@ fun TranslationScreen(docId: String, onBack: () -> Unit) {
                     Button(onClick = { runAi() }, enabled = !aiLoading) {
                         Icon(Icons.Default.Send, null); Spacer(Modifier.width(4.dp));
                         Text(if (aiLoading) "翻译中..." else "AI翻译")
+                    }
+                    TextButton(onClick = { skipCurrent() }) {
+                        Text("跳过")
                     }
                     TextButton(onClick = { copyToClipboard(translatedText, "译文") }) {
                         Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(4.dp)); Text("复制")
