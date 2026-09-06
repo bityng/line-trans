@@ -24,9 +24,11 @@ class WebTerminalServer(
     }
 
     override fun serve(session: IHTTPSession): Response {
-        return when (session.uri) {
-            "/", "/terminal" -> serveHtml()
-            "/health" -> newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "ok")
+        val uri = session.uri.removePrefix("/")
+        return when {
+            uri == "" || uri == "terminal" -> serveHtml()
+            uri == "health" -> newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "ok")
+            uri.startsWith("web_terminal/") -> serveAsset(uri.removePrefix("web_terminal/"))
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain; charset=utf-8", "404 not found")
         }
     }
@@ -36,6 +38,22 @@ class WebTerminalServer(
             context.assets.open("web_terminal.html").bufferedReader().readText()
         }.getOrElse { "<h1>web_terminal.html missing</h1>" }
         return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html)
+    }
+
+    private fun serveAsset(name: String): Response {
+        val mime = when {
+            name.endsWith(".js") -> "text/javascript; charset=utf-8"
+            name.endsWith(".css") -> "text/css; charset=utf-8"
+            else -> "application/octet-stream"
+        }
+        val bytes = runCatching {
+            context.assets.open("web_terminal/" + name).readBytes()
+        }.getOrNull()
+        return if (bytes != null) {
+            newFixedLengthResponse(Response.Status.OK, mime, bytes)
+        } else {
+            newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain; charset=utf-8", "404")
+        }
     }
 
     override fun openWebSocket(handshake: IHTTPSession): NanoWSD.WebSocket = TerminalWebSocket(handshake)
