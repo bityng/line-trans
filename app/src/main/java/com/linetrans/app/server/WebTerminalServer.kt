@@ -3,6 +3,7 @@ package com.linetrans.app.server
 import android.content.Context
 import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoWSD
+import java.io.ByteArrayInputStream
 import java.io.IOException
 
 /**
@@ -50,7 +51,7 @@ class WebTerminalServer(
             context.assets.open("web_terminal/" + name).readBytes()
         }.getOrNull()
         return if (bytes != null) {
-            newFixedLengthResponse(Response.Status.OK, mime, bytes)
+            newFixedLengthResponse(Response.Status.OK, mime, ByteArrayInputStream(bytes), bytes.size.toLong())
         } else {
             newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain; charset=utf-8", "404")
         }
