@@ -19,4 +19,10 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /** 退到后台时把还在防抖队列里的文档写入磁盘。 */
+    override fun onStop() {
+        super.onStop()
+        DocRepository.flushAll()
+    }
 }
