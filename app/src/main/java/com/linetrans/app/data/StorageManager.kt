@@ -32,9 +32,15 @@ object StorageManager {
         return decodeText(bytes)
     }
 
-    /** 优先按 UTF-8 解码，若失败则回退 GB18030（兼容中文 Windows 的 ANSI/GBK 文本）。 */
+    /** 优先按 UTF-8 解码，失败则回退 GB18030（兼容中文 Windows 的 ANSI/GBK 文本），并识别 UTF-16 BOM。 */
     fun decodeText(bytes: ByteArray): String {
         if (bytes.isEmpty()) return ""
+        if (bytes.size >= 2) {
+            val b0 = bytes[0].toInt() and 0xFF
+            val b1 = bytes[1].toInt() and 0xFF
+            if (b0 == 0xFF && b1 == 0xFE) return String(bytes, 2, bytes.size - 2, Charset.forName("UTF-16LE"))
+            if (b0 == 0xFE && b1 == 0xFF) return String(bytes, 2, bytes.size - 2, Charset.forName("UTF-16BE"))
+        }
         val offset = if (bytes.size >= 3 &&
             bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()
         ) 3 else 0
@@ -48,19 +54,29 @@ object StorageManager {
         }
     }
 
-    fun writeTextToFolder(context: Context, treeUri: String, fileName: String, text: String) {
-        val dir = DocumentFile.fromTreeUri(context, Uri.parse(treeUri)) ?: return
+    /** 写入已授权的文件夹，返回文档 Uri（失败返回 null）。 */
+    fun writeTextToFolder(context: Context, treeUri: String, fileName: String, text: String): Uri? {
+        val dir = DocumentFile.fromTreeUri(context, Uri.parse(treeUri)) ?: return null
         val existing = dir.findFile(fileName)
-        val doc = existing ?: dir.createFile("text/plain", fileName)
-        if (doc == null) return
-        context.contentResolver.openOutputStream(doc.uri)?.use { out ->
-            out.write(text.toByteArray(Charsets.UTF_8))
-        }
+        val doc = existing ?: dir.createFile(mimeOf(fileName), fileName) ?: return null
+        return runCatching {
+            context.contentResolver.openOutputStream(doc.uri)?.use { out ->
+                out.write(text.toByteArray(Charsets.UTF_8))
+            }
+            doc.uri
+        }.getOrNull()
     }
 
     fun hasAccess(context: Context, treeUri: String): Boolean {
         if (treeUri.isBlank()) return false
         val dir = DocumentFile.fromTreeUri(context, Uri.parse(treeUri)) ?: return false
         return dir.exists() && dir.canWrite()
+    }
+
+    private fun mimeOf(fileName: String): String = when {
+        fileName.endsWith(".json") -> "application/json"
+        fileName.endsWith(".md") -> "text/markdown"
+        fileName.endsWith(".csv") -> "text/csv"
+        else -> "text/plain"
     }
 }

@@ -13,12 +13,19 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
 
+/** 文档排序方式。 */
+enum class DocSort(val label: String) {
+    UPDATED("最近更新"),
+    NAME("名称"),
+    PROGRESS("进度")
+}
+
 /**
  * 文档仓库。内存里保存全部文档，磁盘写入做防抖并放到 IO 线程，
  * 避免打字时每个字符都同步写文件卡住输入。
  */
 object DocRepository {
-    private const val SAVE_DEBOUNCE_MS = 700L
+    private const val DEFAULT_DEBOUNCE_MS = 700L
 
     private val gson = Gson()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -29,6 +36,8 @@ object DocRepository {
     private val jobs = HashMap<String, Job>()
 
     private var dir: File? = null
+
+    var sortMode: DocSort = DocSort.UPDATED
 
     val docs = mutableStateListOf<TranslationDoc>()
 
@@ -54,6 +63,11 @@ object DocRepository {
         docs.addAll(loaded)
     }
 
+    private fun debounceMs(): Long =
+        runCatching { SettingsRepository.settings.autoSaveMs.toLong() }
+            .getOrDefault(DEFAULT_DEBOUNCE_MS)
+            .coerceIn(200L, 5000L)
+
     /** 保存到内存并（防抖）写入磁盘；[immediate] 用于离开编辑页等需要立刻落盘的场景。 */
     fun save(doc: TranslationDoc, immediate: Boolean = false) {
         doc.updatedAt = System.currentTimeMillis()
@@ -71,7 +85,7 @@ object DocRepository {
             jobs.remove(doc.id)?.cancel()
             if (!immediate) {
                 jobs[doc.id] = scope.launch {
-                    delay(SAVE_DEBOUNCE_MS)
+                    delay(debounceMs())
                     writePending(doc.id)
                 }
             }
@@ -83,7 +97,10 @@ object DocRepository {
     fun flushAll() {
         val ids = synchronized(lock) { pending.keys.toList() }
         if (ids.isEmpty()) return
-        synchronized(lock) { jobs.values.forEach { it.cancel() }; jobs.clear() }
+        synchronized(lock) {
+            jobs.values.forEach { it.cancel() }
+            jobs.clear()
+        }
         scope.launch { ids.forEach { writePending(it) } }
     }
 
@@ -112,8 +129,51 @@ object DocRepository {
     fun folders(): List<String> = docs.map { it.folder }.distinct().sorted()
 
     fun sort() {
-        val sorted = docs.sortedByDescending { it.updatedAt }
+        val sorted = when (sortMode) {
+            DocSort.UPDATED -> docs.sortedWith(compareByDescending<TranslationDoc> { it.pinned }.thenByDescending { it.updatedAt })
+            DocSort.NAME -> docs.sortedWith(compareByDescending<TranslationDoc> { it.pinned }.thenBy { it.name })
+            DocSort.PROGRESS -> docs.sortedWith(compareByDescending<TranslationDoc> { it.pinned }.thenByDescending { it.progress })
+        }
         docs.clear()
         docs.addAll(sorted)
+    }
+
+    fun setSort(mode: DocSort) {
+        sortMode = mode
+        sort()
+    }
+
+    // ---------- 备份 / 恢复 ----------
+
+    /** 导出全部文档为 JSON 文本。 */
+    fun exportAllJson(): String = gson.toJson(docs.toList())
+
+    /** 从备份 JSON 恢复文档；[replace] 为 true 时先清空现有文档。 */
+    fun importAllJson(json: String, replace: Boolean): Result<Int> = runCatching {
+        val type = com.google.gson.reflect.TypeToken.getParameterized(
+            MutableList::class.java,
+            TranslationDoc::class.java
+        ).type
+        val list: List<TranslationDoc> = gson.fromJson(json, type) ?: error("备份内容为空")
+        if (replace) {
+            synchronized(lock) {
+                pending.clear()
+                jobs.values.forEach { it.cancel() }
+                jobs.clear()
+            }
+            dir?.listFiles()?.filter { it.extension == "json" }?.forEach { it.delete() }
+            docs.clear()
+        }
+        var count = 0
+        list.forEach { doc ->
+            // 跳过已存在的文档，避免重复恢复产生副本
+            if (doc.id.isNotBlank() && docs.none { it.id == doc.id }) {
+                docs.add(doc)
+                count++
+            }
+        }
+        sort()
+        docs.forEach { save(it, immediate = true) }
+        count
     }
 }

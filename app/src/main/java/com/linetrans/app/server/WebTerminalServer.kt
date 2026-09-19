@@ -1,6 +1,7 @@
 package com.linetrans.app.server
 
 import android.content.Context
+import com.linetrans.app.data.SettingsRepository
 import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoWSD
 import java.io.ByteArrayInputStream
@@ -8,6 +9,9 @@ import java.io.IOException
 
 /**
  * 局域网 Web 终端服务。提供 xterm.js 页面（/terminal），通过 WebSocket（/ws）桥接手机本地 shell。
+ *
+ * 注意：WebSocket 的升级握手由 [NanoWSD.serve] 处理，因此这里只能覆盖 [serveHttp]，
+ * 覆盖 [serve] 会让 /ws 永远走不到升级分支。
  */
 class WebTerminalServer(
     private val context: Context,
@@ -24,15 +28,31 @@ class WebTerminalServer(
         started = true
     }
 
-    override fun serve(session: IHTTPSession): Response {
+    override fun serveHttp(session: IHTTPSession): Response {
+        if (!tokenAllowed(session)) return unauthorized()
         val uri = session.uri.removePrefix("/")
         return when {
             uri == "" || uri == "terminal" -> serveHtml()
             uri == "health" -> newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "ok")
             uri.startsWith("web_terminal/") -> serveAsset(uri.removePrefix("web_terminal/"))
+            uri == "favicon.ico" -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "")
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain; charset=utf-8", "404 not found")
         }
     }
+
+    /** 设置了访问令牌时，HTTP 与 WebSocket 都必须携带 ?token=xxx。 */
+    private fun tokenAllowed(session: IHTTPSession): Boolean {
+        val expected = SettingsRepository.settings.webServerToken.trim()
+        if (expected.isEmpty()) return true
+        val provided = session.parameters?.get("token")?.firstOrNull()
+        return provided == expected
+    }
+
+    private fun unauthorized(): Response = newFixedLengthResponse(
+        Response.Status.UNAUTHORIZED,
+        "text/plain; charset=utf-8",
+        "401 未授权：请在地址后加上 ?token=<访问令牌>"
+    )
 
     private fun serveHtml(): Response {
         val html = runCatching {
@@ -57,10 +77,25 @@ class WebTerminalServer(
         }
     }
 
-    override fun openWebSocket(handshake: IHTTPSession): NanoWSD.WebSocket = TerminalWebSocket(handshake)
+    override fun openWebSocket(handshake: IHTTPSession): NanoWSD.WebSocket =
+        if (tokenAllowed(handshake)) TerminalWebSocket(handshake) else RejectedWebSocket(handshake)
 
     override fun stop() {
         super.stop()
+    }
+
+    /** 令牌错误时直接关闭连接。 */
+    private inner class RejectedWebSocket(handshake: IHTTPSession) : NanoWSD.WebSocket(handshake) {
+        override fun onOpen() {
+            runCatching {
+                close(NanoWSD.WebSocketFrame.CloseCode.PolicyViolation, "unauthorized", true)
+            }
+        }
+
+        override fun onClose(code: NanoWSD.WebSocketFrame.CloseCode?, reason: String?, initiatedByRemote: Boolean) {}
+        override fun onMessage(message: NanoWSD.WebSocketFrame) {}
+        override fun onPong(pong: NanoWSD.WebSocketFrame) {}
+        override fun onException(e: IOException) {}
     }
 
     inner class TerminalWebSocket(handshake: IHTTPSession) : NanoWSD.WebSocket(handshake) {
@@ -78,7 +113,7 @@ class WebTerminalServer(
                             sendSafe(line + "\r\n")
                         }
                     } catch (_: Exception) {
-                        // stream ended
+                        // 流已结束
                     }
                 }.apply {
                     isDaemon = true
