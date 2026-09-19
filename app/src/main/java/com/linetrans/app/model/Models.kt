@@ -28,14 +28,30 @@ data class TranslationDoc(
 ) {
     val totalCount: Int get() = units.size
     val translatedCount: Int get() = units.count { it.isDone }
+    val remainingCount: Int get() = units.count { !it.isDone }
     val progress: Float get() = if (totalCount == 0) 0f else translatedCount.toFloat() / totalCount
+    val isFinished: Boolean get() = totalCount > 0 && translatedCount >= totalCount
+
+    /** 从 [from] 开始按环形顺序找下一个未完成的单元，全部完成时返回 null。 */
+    fun nextUndoneIndex(from: Int = 0): Int? {
+        if (units.isEmpty()) return null
+        for (offset in units.indices) {
+            val i = ((from + offset) % units.size + units.size) % units.size
+            if (!units[i].isDone) return i
+        }
+        return null
+    }
 
     companion object {
         const val DEFAULT_FOLDER = "默认"
     }
 }
 
-enum class ProviderType { OPENAI_COMPAT, ANTHROPIC, CUSTOM }
+enum class ProviderType(val label: String) {
+    OPENAI_COMPAT("OpenAI 兼容"),
+    ANTHROPIC("Anthropic"),
+    CUSTOM("自定义")
+}
 
 data class BillingConfig(
     var inputPrice: Double = 0.0,
@@ -46,18 +62,24 @@ data class BillingConfig(
 ) {
     val currentMultiplier: Double
         get() {
+            if (peakMultiplier == 1.0) return 1.0
             val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
             val inPeak = if (peakStartHour <= peakEndHour) h in peakStartHour until peakEndHour
                 else (h >= peakStartHour || h < peakEndHour)
             return if (inPeak) peakMultiplier else 1.0
         }
+
+    /** 是否配置了价格（未配置时不做费用估算）。 */
+    val hasPrice: Boolean get() = inputPrice > 0.0 || outputPrice > 0.0
 }
 
 data class ModelConfig(
     val id: String,
     var name: String,
     var providerId: String,
-    var billing: BillingConfig = BillingConfig()
+    var billing: BillingConfig = BillingConfig(),
+    var maxTokens: Int = 4096,
+    var temperature: Double = 0.2
 )
 
 data class ProviderConfig(
@@ -81,8 +103,19 @@ data class AppSettings(
     var storageDirUri: String = "",
     var dailyGoal: Int = 0,
     var webServerPort: Int = 8080,
-    var webServerEnabled: Boolean = false
+    var webServerEnabled: Boolean = false,
+    /** 附加提示词，拼接在系统提示之后，用于统一术语或风格。 */
+    var customPrompt: String = "",
+    /** AI 翻译时携带的前文参考句数。 */
+    var contextUnits: Int = 3,
+    /** AI 翻译完成后是否自动跳到下一句。 */
+    var autoAdvance: Boolean = true,
+    /** 每日进度统计的日期（yyyy-MM-dd）与计数。 */
+    var dailyDate: String = "",
+    var dailyCount: Int = 0
 ) {
     val activeProvider: ProviderConfig? get() = providers.firstOrNull { it.id == activeProviderId }
     val activeModel: ModelConfig? get() = activeProvider?.findModel(activeModelId)
+
+    val allModels: List<ModelConfig> get() = providers.flatMap { it.models }
 }
