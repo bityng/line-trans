@@ -140,7 +140,7 @@ private enum class ReplaceScope(val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
+fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = false, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val service = remember { TranslationService(context) }
@@ -163,6 +163,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
         mutableIntStateOf(startIndex.coerceIn(0, (doc.units.size - 1).coerceAtLeast(0)))
     }
     var mode by remember(docId) { mutableStateOf(doc.unitMode) }
+    var readOnly by remember(docId) { mutableStateOf(viewOnly) }
     var translatedText by remember(docId) { mutableStateOf(doc.units[currentIndex].translation) }
     var editableOriginal by remember(docId) { mutableStateOf(false) }
     var dividerLocked by remember(docId) { mutableStateOf(false) }
@@ -242,6 +243,9 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
             if (unit.translation != translatedText) applyUnit(unit, translation = translatedText)
         }
         currentIndex = index
+        // 记住阅读位置，下次打开文档时回到这里
+        doc.lastIndex = index
+        DocRepository.save(doc)
         translatedText = doc.units[index].translation
         editableOriginal = false
         editSessionIndex = -1
@@ -249,7 +253,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
 
     fun goNext() {
         val unit = currentUnit() ?: return
-        applyUnit(unit, translation = translatedText, done = true)
+        if (!readOnly) applyUnit(unit, translation = translatedText, done = true)
         if (currentIndex < doc.units.size - 1) select(currentIndex + 1) else showDone = true
     }
 
@@ -333,6 +337,9 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
 
     fun switchMode(newMode: UnitMode) {
         if (newMode == doc.unitMode) return
+        // 锚定当前这句的原文，切分方式变化后仍停在原来的位置
+        val anchor = currentUnit()?.source
+        val anchorTranslated = currentUnit()?.translation ?: ""
         val source = if (doc.sourceText.isNotBlank()) doc.sourceText else doc.units.joinToString("\n") { it.source }
         val oldBySource = doc.units.associateBy { it.source }
         val newUnits = TextParser.parse(source, newMode).map { u ->
@@ -343,13 +350,22 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
         doc.units.addAll(newUnits)
         doc.unitMode = newMode
         mode = newMode
-        currentIndex = 0
-        translatedText = doc.units.firstOrNull()?.translation ?: ""
+        val restored = when {
+            anchor.isNullOrBlank() -> -1
+            else -> doc.units.indexOfFirst { it.source == anchor }
+        }
+        currentIndex = if (restored >= 0) restored else {
+            // 逐句拆开后原句不在第一段时，退一步找包含关系
+            if (anchor.isNullOrBlank()) 0
+            else doc.units.indexOfFirst { it.source.contains(anchor) || anchor.contains(it.source) }.coerceAtLeast(0)
+        }
+        doc.lastIndex = currentIndex
+        translatedText = doc.units.getOrNull(currentIndex)?.translation ?: anchorTranslated
         undoStack.clear()
         redoStack.clear()
         DocRepository.save(doc, immediate = true)
         revision++
-        notify("已切换为" + if (newMode == UnitMode.SENTENCE) "逐句" else "逐行" + "模式")
+        notify("已切换为" + (if (newMode == UnitMode.SENTENCE) "逐句" else "逐行") + "模式")
     }
 
     fun runAi(onFinished: (() -> Unit)? = null) {
@@ -538,11 +554,22 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { undo() }, enabled = undoStack.isNotEmpty()) {
-                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "撤销")
-                    }
-                    IconButton(onClick = { redo() }, enabled = redoStack.isNotEmpty()) {
-                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "重做")
+                    if (readOnly) {
+                        TextButton(onClick = {
+                            readOnly = false
+                            notify("已切换到编辑模式")
+                        }) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("开始编辑")
+                        }
+                    } else {
+                        IconButton(onClick = { undo() }, enabled = undoStack.isNotEmpty()) {
+                            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "撤销")
+                        }
+                        IconButton(onClick = { redo() }, enabled = redoStack.isNotEmpty()) {
+                            Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "重做")
+                        }
                     }
                     Box {
                         IconButton(onClick = { topMenu = true }, enabled = !batchRunning) {
@@ -553,14 +580,16 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                                 text = { Text("跳转到…") },
                                 onClick = { topMenu = false; showJump = true }
                             )
-                            DropdownMenuItem(
-                                text = { Text("查找与替换…") },
-                                onClick = { topMenu = false; showFindReplace = true }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("批量翻译剩余 " + doc.remainingCount + " " + unitLabel(mode)) },
-                                onClick = { topMenu = false; showBatchConfirm = true }
-                            )
+                            if (!readOnly) {
+                                DropdownMenuItem(
+                                    text = { Text("查找与替换…") },
+                                    onClick = { topMenu = false; showFindReplace = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("批量翻译剩余 " + doc.remainingCount + " " + unitLabel(mode)) },
+                                    onClick = { topMenu = false; showBatchConfirm = true }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("跳到下一个未完成") },
                                 onClick = {
@@ -629,6 +658,16 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
+                if (readOnly) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = CircleShape) {
+                        Text(
+                            "只读预览",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { goPrev() }, enabled = currentIndex > 0) {
                     Icon(Icons.Default.SkipPrevious, contentDescription = "上一句")
@@ -684,7 +723,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                     )
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("原文", style = MaterialTheme.typography.labelLarge)
+                    Text(if (readOnly) "原文（只读）" else "原文", style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = { speak(currentUnit()?.source ?: "") }) {
                         Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "朗读原文", modifier = Modifier.size(20.dp))
@@ -692,14 +731,16 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                     IconButton(onClick = { copyToClipboard(currentUnit()?.source ?: "", "原文") }) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "复制原文", modifier = Modifier.size(20.dp))
                     }
-                    IconButton(onClick = { editableOriginal = !editableOriginal }) {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = if (editableOriginal) "完成修改" else "修改原文",
-                            modifier = Modifier.size(20.dp),
-                            tint = if (editableOriginal) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    if (!readOnly) {
+                        IconButton(onClick = { editableOriginal = !editableOriginal }) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = if (editableOriginal) "完成修改" else "修改原文",
+                                modifier = Modifier.size(20.dp),
+                                tint = if (editableOriginal) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
                 OutlinedTextField(
@@ -713,7 +754,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                             }
                         }
                     },
-                    readOnly = !editableOriginal,
+                    readOnly = !editableOriginal || readOnly,
                     placeholder = { Text("原文") },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     textStyle = MaterialTheme.typography.bodyLarge,
@@ -754,7 +795,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("译文", style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.weight(1f))
-                    if (imeOpen) {
+                    if (imeOpen && !readOnly) {
                         FilledTonalButton(
                             onClick = {
                                 runAi(onFinished = {
@@ -781,29 +822,31 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                             Icon(Icons.Default.MoreVert, contentDescription = "更多")
                         }
                         DropdownMenu(expanded = unitMenu, onDismissRequest = { unitMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("粘贴原文") },
-                                onClick = {
-                                    unitMenu = false
-                                    pushSnapshot(force = true)
-                                    val text = currentUnit()?.source ?: ""
-                                    translatedText = text
-                                    currentUnit()?.let { applyUnit(it, translation = text) }
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("清空译文") },
-                                onClick = {
-                                    unitMenu = false
-                                    pushSnapshot(force = true)
-                                    translatedText = ""
-                                    currentUnit()?.let { applyUnit(it, translation = "", done = false) }
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("重新翻译本句") },
-                                onClick = { unitMenu = false; runAi() }
-                            )
+                            if (!readOnly) {
+                                DropdownMenuItem(
+                                    text = { Text("粘贴原文") },
+                                    onClick = {
+                                        unitMenu = false
+                                        pushSnapshot(force = true)
+                                        val text = currentUnit()?.source ?: ""
+                                        translatedText = text
+                                        currentUnit()?.let { applyUnit(it, translation = text) }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("清空译文") },
+                                    onClick = {
+                                        unitMenu = false
+                                        pushSnapshot(force = true)
+                                        translatedText = ""
+                                        currentUnit()?.let { applyUnit(it, translation = "", done = false) }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("重新翻译本句") },
+                                    onClick = { unitMenu = false; runAi() }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("分享本句") },
                                 onClick = {
@@ -814,7 +857,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                         }
                     }
                 }
-                if (!imeOpen) {
+                if (!imeOpen && !readOnly) {
                     Button(
                         onClick = {
                             runAi(onFinished = {
@@ -850,6 +893,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                     },
                     placeholder = { Text("在这里输入译文") },
                     modifier = Modifier.fillMaxWidth().weight(1f),
+                    readOnly = readOnly,
                     shape = RoundedCornerShape(14.dp)
                 )
             }

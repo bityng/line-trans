@@ -129,7 +129,7 @@ private enum class DocFilter(val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun HomeScreen(onOpenDoc: (String, Int) -> Unit, onOpenSettings: () -> Unit) {
+fun HomeScreen(onOpenDoc: (String, Int, Boolean) -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -468,8 +468,11 @@ fun HomeScreen(onOpenDoc: (String, Int) -> Unit, onOpenSettings: () -> Unit) {
                                 modifier = Modifier.animateItem(placementSpec = Motion.gentle()),
                                 expanded = expandedId == doc.id,
                                 onToggle = { expandedId = if (expandedId == doc.id) null else doc.id },
-                                onContinue = { onOpenDoc(doc.id, doc.nextUndoneIndex(0) ?: 0) },
-                                onView = { onOpenDoc(doc.id, 0) },
+                                onContinue = { onOpenDoc(doc.id, doc.nextUndoneIndex(0) ?: 0, false) },
+                                onView = {
+                                    val last = doc.lastIndex.coerceIn(0, (doc.totalCount - 1).coerceAtLeast(0))
+                                    onOpenDoc(doc.id, last, true)
+                                },
                                 onPin = {
                                     doc.pinned = !doc.pinned
                                     DocRepository.save(doc, immediate = true)

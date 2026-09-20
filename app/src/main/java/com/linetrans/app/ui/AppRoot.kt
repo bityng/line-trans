@@ -62,23 +62,35 @@ fun AppRoot() {
     ) {
         composable("home") {
             HomeScreen(
-                onOpenDoc = { id, start -> nav.navigate("translate/" + id + "?start=" + start) },
+                onOpenDoc = { id, start, viewOnly ->
+                    nav.navigate("translate/" + id + "?start=" + start + "&view=" + viewOnly)
+                },
                 onOpenSettings = { nav.navigate("settings") }
             )
         }
         composable(
-            route = "translate/{docId}?start={start}",
+            route = "translate/{docId}?start={start}&view={view}",
             arguments = listOf(
                 navArgument("docId") { type = NavType.StringType },
                 navArgument("start") {
                     type = NavType.IntType
                     defaultValue = 0
+                },
+                navArgument("view") {
+                    type = NavType.BoolType
+                    defaultValue = false
                 }
             )
         ) { entry ->
             val docId = entry.arguments?.getString("docId") ?: ""
             val start = entry.arguments?.getInt("start") ?: 0
-            TranslationScreen(docId = docId, startIndex = start, onBack = { nav.popBackStack() })
+            val viewOnly = entry.arguments?.getBoolean("view") ?: false
+            TranslationScreen(
+                docId = docId,
+                startIndex = start,
+                viewOnly = viewOnly,
+                onBack = { nav.popBackStack() }
+            )
         }
         composable("settings") {
             SettingsScreen(onBack = { nav.popBackStack() })

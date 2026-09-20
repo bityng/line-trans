@@ -44,6 +44,8 @@ data class TranslationDoc(
     var sourceText: String = "",
     /** 置顶显示。 */
     var pinned: Boolean = false,
+    /** 上次编辑到的位置，重新打开文档时回到这里。 */
+    var lastIndex: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     var updatedAt: Long = System.currentTimeMillis()
 ) {

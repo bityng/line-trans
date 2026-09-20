@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -944,7 +945,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.advancedTab(context: 
     }
 
     item {
-        SectionCard(title = "Web 终端服务", subtitle = "局域网内浏览器访问手机 shell", icon = Icons.Default.Storage) {
+        SectionCard(
+            title = "局域网 Web 服务",
+            subtitle = "浏览器继续翻译（/），也可用 Shell 终端（/terminal）",
+            icon = Icons.Default.Storage
+        ) {
             WebTerminalSettings(context, notify)
         }
     }
@@ -1032,8 +1037,8 @@ private fun WebTerminalSettings(context: Context, notify: Notify) {
     val running = com.linetrans.app.server.WebTerminalService.isRunning
 
     SwitchRow(
-        title = "启用 Web 终端服务",
-        subtitle = if (running) "运行中" else "已停止",
+        title = "启用局域网 Web 服务",
+        subtitle = if (running) "运行中：浏览器打开首页即可继续翻译" else "已停止",
         checked = settings.webServerEnabled,
         onCheckedChange = { checked ->
             if (checked) {
@@ -1088,7 +1093,8 @@ private fun WebTerminalSettings(context: Context, notify: Notify) {
     if (settings.webServerEnabled || running) {
         val ip = com.linetrans.app.util.NetworkUtils.getLocalIpAddress() ?: "127.0.0.1"
         val suffix = if (settings.webServerToken.isBlank()) "" else "?token=" + settings.webServerToken
-        val url = "http://" + ip + ":" + settings.webServerPort + "/terminal" + suffix
+        val base = "http://" + ip + ":" + settings.webServerPort
+        val url = base + "/" + suffix
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -1107,6 +1113,11 @@ private fun WebTerminalSettings(context: Context, notify: Notify) {
                 Icon(Icons.Default.ContentCopy, contentDescription = "复制地址")
             }
         }
+        Text(
+            "网页翻译台（推荐）：" + base + "/　·　Shell 终端：" + base + "/terminal",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1114,33 +1125,57 @@ private fun WebTerminalSettings(context: Context, notify: Notify) {
 
 private fun androidx.compose.foundation.lazy.LazyListScope.aboutTab(context: Context) {
     item {
-        SectionCard(title = "逐行翻译", subtitle = "v" + com.linetrans.app.BuildConfig.VERSION_NAME, icon = Icons.Default.Translate) {
+        SectionCard(
+            title = "逐行翻译 · 安卓客户端",
+            subtitle = "v" + com.linetrans.app.BuildConfig.VERSION_NAME,
+            icon = Icons.Default.Translate
+        ) {
             Text(
                 "一款用于逐行 / 逐句对照翻译的安卓原生应用，支持多家 AI 接口、翻译记忆、" +
-                    "批量翻译与局域网 Web 终端。",
+                    "批量翻译，并内置局域网网页翻译台。",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(Modifier.height(10.dp))
             FilledTonalButton(onClick = {
                 runCatching {
                     context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/bityng/line-trans"))
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/bityng/line-trans-android"))
                     )
                 }
-            }) { Text("查看项目主页") }
+            }) { Text("安卓客户端仓库") }
         }
     }
     item {
-        SectionCard(title = "最近更新", subtitle = "v1.3.1", icon = Icons.Default.AutoAwesome) {
+        SectionCard(title = "网页服务端", subtitle = "line-trans-web", icon = Icons.Default.Computer) {
+            Text(
+                "本客户端内置的网页翻译台，与独立服务端 line-trans-web 共用同一套界面与 API：" +
+                    "在手机开启「局域网 Web 服务」后，同一局域网的电脑浏览器打开手机地址即可继续翻译；" +
+                    "也可以在电脑 / NAS 上单独运行 Web 服务端使用。",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/bityng/line-trans-web"))
+                    )
+                }
+            }) { Text("网页服务端仓库") }
+        }
+    }
+    item {
+        SectionCard(title = "最近更新", subtitle = "v1.4.0", icon = Icons.Default.AutoAwesome) {
             listOf(
+                "局域网 Web 服务改为网页翻译台：浏览器里继续翻译、AI 翻译与导出",
+                "新增只读「查看」模式，并记住每篇文档的阅读位置",
+                "修复切换逐行/逐句时跳回第一句的问题",
                 "键盘弹出时自动收起次要区域，译文输入框不再被挤压遮挡",
                 "页面转场与展开动画统一曲线与时长，过渡更顺滑",
                 "设置页重构为 AI / 界面 / 数据 / 高级 / 关于 五个分类",
                 "系统提示词与术语表开放给用户自定义",
                 "翻译记忆、撤销重做、查找替换、朗读、收藏",
                 "导出支持 Markdown / CSV / JSON，支持分享",
-                "用量统计与近 7 天进度图表",
-                "文档置顶、排序、备份与恢复"
+                "用量统计与近 7 天进度图表、文档置顶排序与备份恢复"
             ).forEach { line ->
                 Row(Modifier.padding(vertical = 2.dp)) {
                     Text("· ", style = MaterialTheme.typography.bodyMedium)
