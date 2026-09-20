@@ -18,6 +18,8 @@ class WebTerminalServer(
     port: Int
 ) : NanoWSD(port) {
 
+    private val api = WebApi(context)
+
     @Volatile
     private var started = false
 
@@ -32,12 +34,27 @@ class WebTerminalServer(
         if (!tokenAllowed(session)) return unauthorized()
         val uri = session.uri.removePrefix("/")
         return when {
-            uri == "" || uri == "terminal" -> serveHtml()
+            uri.startsWith("api/") -> api.handle(session)
+            uri.isEmpty() || uri == "index.html" || uri == "app" -> serveWebApp("index.html", "text/html; charset=utf-8")
+            uri == "app.js" -> serveWebApp("app.js", "text/javascript; charset=utf-8")
+            uri == "style.css" -> serveWebApp("style.css", "text/css; charset=utf-8")
+            uri == "terminal" -> serveHtml()
             uri == "health" -> newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "ok")
             uri.startsWith("web_terminal/") -> serveAsset(uri.removePrefix("web_terminal/"))
             uri == "favicon.ico" -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "")
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain; charset=utf-8", "404 not found")
         }
+    }
+
+    /** 网页翻译台的静态资源（assets/web/）。 */
+    private fun serveWebApp(name: String, mime: String): Response {
+        val bytes = runCatching { context.assets.open("web/" + name).readBytes() }.getOrNull()
+            ?: return newFixedLengthResponse(
+                Response.Status.NOT_FOUND,
+                "text/plain; charset=utf-8",
+                "缺少 assets/web/$name"
+            )
+        return newFixedLengthResponse(Response.Status.OK, mime, ByteArrayInputStream(bytes), bytes.size.toLong())
     }
 
     /** 设置了访问令牌时，HTTP 与 WebSocket 都必须携带 ?token=xxx。 */

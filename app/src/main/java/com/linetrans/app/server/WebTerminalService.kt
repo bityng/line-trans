@@ -66,7 +66,7 @@ class WebTerminalService : Service() {
 
     private fun buildNotification(): Notification {
         val port = SettingsRepository.settings.webServerPort
-        val text = "Web 终端已在局域网运行，端口 " + port
+        val text = "网页翻译台已在局域网运行，端口 " + port
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Web 终端服务")
