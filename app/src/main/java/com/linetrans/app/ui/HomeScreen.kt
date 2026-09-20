@@ -465,7 +465,7 @@ fun HomeScreen(onOpenDoc: (String, Int) -> Unit, onOpenSettings: () -> Unit) {
                         items(filtered, key = { it.id }) { doc ->
                             DocCard(
                                 doc = doc,
-                                modifier = Modifier.animateItem(),
+                                modifier = Modifier.animateItem(placementSpec = Motion.gentle()),
                                 expanded = expandedId == doc.id,
                                 onToggle = { expandedId = if (expandedId == doc.id) null else doc.id },
                                 onContinue = { onOpenDoc(doc.id, doc.nextUndoneIndex(0) ?: 0) },
@@ -575,7 +575,7 @@ private fun DrawerRow(
 ) {
     val bg by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-        animationSpec = tween(200),
+        animationSpec = Motion.move(240),
         label = "drawer-bg"
     )
     Row(
@@ -618,7 +618,7 @@ private fun TodayHeroCard(onReset: () -> Unit) {
     val goal = SettingsRepository.settings.dailyGoal
     val done = SettingsRepository.dailyCount()
     val ratio = if (goal <= 0) 0f else (done.toFloat() / goal).coerceIn(0f, 1f)
-    val animatedRatio by animateFloatAsState(ratio, animationSpec = tween(600), label = "daily-progress")
+    val animatedRatio by animateFloatAsState(ratio, animationSpec = Motion.value(620), label = "daily-progress")
     val totalTranslated = docs.sumOf { it.translatedCount }
     val totalUnits = docs.sumOf { it.totalCount }
     val starred = docs.sumOf { it.starredCount }
@@ -718,7 +718,7 @@ private fun DocCard(
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val animatedProgress by animateFloatAsState(doc.progress, animationSpec = tween(500), label = "doc-progress")
+    val animatedProgress by animateFloatAsState(doc.progress, animationSpec = Motion.value(560), label = "doc-progress")
     Card(
         modifier.fillMaxWidth().clickable { onToggle() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -800,8 +800,8 @@ private fun DocCard(
 
             AnimatedVisibility(
                 visible = expanded,
-                enter = expandVertically(animationSpec = tween(220)) + fadeIn(tween(180)),
-                exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(120))
+                enter = expandVertically(animationSpec = Motion.gentle()) + fadeIn(animationSpec = Motion.enter(220)),
+                exit = shrinkVertically(animationSpec = Motion.exit(200)) + fadeOut(animationSpec = Motion.exit(200))
             ) {
                 Column {
                     Spacer(Modifier.height(12.dp))

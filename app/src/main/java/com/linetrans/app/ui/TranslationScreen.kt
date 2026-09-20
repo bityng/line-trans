@@ -24,10 +24,12 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -100,6 +102,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -203,7 +207,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
     val stats = remember(revision) {
         Triple(doc.translatedCount, doc.totalCount, doc.progress)
     }
-    val animatedProgress by animateFloatAsState(stats.third, animationSpec = tween(450), label = "progress")
+    val animatedProgress by animateFloatAsState(stats.third, animationSpec = Motion.value(520), label = "progress")
 
     fun toast(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 
@@ -497,6 +501,16 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
         )
     }
 
+    // 键盘弹出时收起次要区域（模式切换 / 分割线 / 用量条），把高度让给译文输入框
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
+    var contentHeightPx by remember(docId) { mutableIntStateOf(0) }
+    val imeInsetsPx = WindowInsets.ime.getBottom(density)
+    val imeOpen = remember(contentHeightPx, screenHeightDp, imeInsetsPx) {
+        val screenPx = with(density) { screenHeightDp.dp.toPx() }
+        val threshold = with(density) { 240.dp.toPx() }
+        imeInsetsPx > threshold / 2 || (contentHeightPx > 0 && contentHeightPx < screenPx - threshold)
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -580,8 +594,9 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
             Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .onSizeChanged { contentHeightPx = it.height }
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 8.dp)
+                .padding(bottom = if (imeOpen) 4.dp else 8.dp)
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.key == Key.Enter) {
                         goNext()
@@ -591,14 +606,14 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
         ) {
             LinearProgressIndicator(
                 progress = { animatedProgress },
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = if (imeOpen) 4.dp else 10.dp).height(6.dp),
                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
                 strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
             )
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp)
+                    .padding(vertical = if (imeOpen) 4.dp else 8.dp)
                     .then(swipeModifier),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -625,41 +640,49 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(
-                    selected = mode == UnitMode.SENTENCE,
-                    onClick = { switchMode(UnitMode.SENTENCE) },
-                    label = { Text("逐句") }
-                )
-                Spacer(Modifier.width(8.dp))
-                FilterChip(
-                    selected = mode == UnitMode.LINE,
-                    onClick = { switchMode(UnitMode.LINE) },
-                    label = { Text("逐行") }
-                )
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = {
-                    currentUnit()?.let { unit ->
-                        pushSnapshot(force = true)
-                        unit.starred = !unit.starred
-                        DocRepository.save(doc)
-                        revision++
-                    }
-                }) {
-                    Icon(
-                        if (currentUnit()?.starred == true) Icons.Default.Star else Icons.Default.StarBorder,
-                        contentDescription = "收藏本句",
-                        tint = if (currentUnit()?.starred == true) MaterialTheme.colorScheme.tertiary
-                        else MaterialTheme.colorScheme.outline
+            if (!imeOpen) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(
+                        selected = mode == UnitMode.SENTENCE,
+                        onClick = { switchMode(UnitMode.SENTENCE) },
+                        label = { Text("逐句") }
                     )
-                }
-                IconButton(onClick = { showJump = true }) {
-                    Icon(Icons.Default.Search, contentDescription = "跳转列表")
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(
+                        selected = mode == UnitMode.LINE,
+                        onClick = { switchMode(UnitMode.LINE) },
+                        label = { Text("逐行") }
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = {
+                        currentUnit()?.let { unit ->
+                            pushSnapshot(force = true)
+                            unit.starred = !unit.starred
+                            DocRepository.save(doc)
+                            revision++
+                        }
+                    }) {
+                        Icon(
+                            if (currentUnit()?.starred == true) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "收藏本句",
+                            tint = if (currentUnit()?.starred == true) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    IconButton(onClick = { showJump = true }) {
+                        Icon(Icons.Default.Search, contentDescription = "跳转列表")
+                    }
                 }
             }
 
             // 原文
-            Column(Modifier.fillMaxWidth().weight(splitFraction)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (imeOpen) Modifier.height(128.dp) else Modifier.weight(splitFraction)
+                    )
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("原文", style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.weight(1f))
@@ -698,31 +721,55 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                IconButton(onClick = {
-                    dividerLocked = !dividerLocked
-                    toast(if (dividerLocked) "已锁定分割线" else "已解锁分割线")
-                }) {
-                    Icon(
-                        if (dividerLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                        contentDescription = if (dividerLocked) "解锁分割线" else "锁定分割线",
-                        modifier = Modifier.size(18.dp)
+            if (!imeOpen) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    IconButton(onClick = {
+                        dividerLocked = !dividerLocked
+                        toast(if (dividerLocked) "已锁定分割线" else "已解锁分割线")
+                    }) {
+                        Icon(
+                            if (dividerLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = if (dividerLocked) "解锁分割线" else "锁定分割线",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Slider(
+                        value = splitFraction,
+                        onValueChange = { if (!dividerLocked) splitFraction = it.coerceIn(0.2f, 0.8f) },
+                        valueRange = 0.2f..0.8f,
+                        enabled = !dividerLocked,
+                        modifier = Modifier.weight(1f)
                     )
                 }
-                Slider(
-                    value = splitFraction,
-                    onValueChange = { if (!dividerLocked) splitFraction = it.coerceIn(0.2f, 0.8f) },
-                    valueRange = 0.2f..0.8f,
-                    enabled = !dividerLocked,
-                    modifier = Modifier.weight(1f)
-                )
             }
 
             // 译文
-            Column(Modifier.fillMaxWidth().weight(1f - splitFraction)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (imeOpen) Modifier.weight(1f) else Modifier.weight(1f - splitFraction)
+                    )
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("译文", style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.weight(1f))
+                    if (imeOpen) {
+                        FilledTonalButton(
+                            onClick = {
+                                runAi(onFinished = {
+                                    if (SettingsRepository.settings.autoAdvance) advanceAfterAi()
+                                })
+                            },
+                            enabled = !aiLoading && !batchRunning,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (aiLoading) "翻译中…" else "AI 翻译", style = MaterialTheme.typography.labelLarge)
+                        }
+                        Spacer(Modifier.width(4.dp))
+                    }
                     IconButton(onClick = { speak(translatedText) }) {
                         Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "朗读译文", modifier = Modifier.size(20.dp))
                     }
@@ -767,24 +814,29 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                         }
                     }
                 }
-                Button(
-                    onClick = {
-                        runAi(onFinished = {
-                            if (SettingsRepository.settings.autoAdvance) advanceAfterAi()
-                        })
-                    },
-                    enabled = !aiLoading && !batchRunning,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    AnimatedContent(
-                        targetState = aiLoading,
-                        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
-                        label = "ai-button"
-                    ) { loading ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (loading) "翻译中…" else "AI 翻译")
+                if (!imeOpen) {
+                    Button(
+                        onClick = {
+                            runAi(onFinished = {
+                                if (SettingsRepository.settings.autoAdvance) advanceAfterAi()
+                            })
+                        },
+                        enabled = !aiLoading && !batchRunning,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        AnimatedContent(
+                            targetState = aiLoading,
+                            transitionSpec = {
+                                fadeIn(animationSpec = Motion.enter(220)) togetherWith
+                                    fadeOut(animationSpec = Motion.exit(160))
+                            },
+                            label = "ai-button"
+                        ) { loading ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (loading) "翻译中…" else "AI 翻译")
+                            }
                         }
                     }
                 }
@@ -802,14 +854,16 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, onBack: () -> Unit) {
                 )
             }
 
-            UsageBar(
-                usage = usage,
-                memoryHits = memoryHits,
-                batchRunning = batchRunning,
-                batchDone = batchDone,
-                batchTotal = batchTotal,
-                modifier = swipeModifier
-            )
+            if (!imeOpen) {
+                UsageBar(
+                    usage = usage,
+                    memoryHits = memoryHits,
+                    batchRunning = batchRunning,
+                    batchDone = batchDone,
+                    batchTotal = batchTotal,
+                    modifier = swipeModifier
+                )
+            }
         }
     }
 

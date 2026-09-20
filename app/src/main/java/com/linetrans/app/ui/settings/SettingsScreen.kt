@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.linetrans.app.data.DocRepository
 import com.linetrans.app.data.SettingsRepository
+import com.linetrans.app.ui.Motion
 import com.linetrans.app.model.BillingConfig
 import com.linetrans.app.model.ModelConfig
 import com.linetrans.app.model.PromptTemplates
@@ -128,8 +129,10 @@ fun SettingsScreen(onBack: () -> Unit) {
                 transitionSpec = {
                     val forward = targetState.ordinal > initialState.ordinal
                     val offset = if (forward) 1 else -1
-                    (slideInHorizontally(tween(260)) { it / 4 * offset } + fadeIn(tween(200))) togetherWith
-                        (slideOutHorizontally(tween(260)) { -it / 4 * offset } + fadeOut(tween(160)))
+                    (slideInHorizontally(Motion.enter(Motion.MEDIUM)) { it / 6 * offset } +
+                        fadeIn(animationSpec = Motion.enter(Motion.MEDIUM))) togetherWith
+                        (slideOutHorizontally(Motion.exit(Motion.MEDIUM - 60)) { -it / 10 * offset } +
+                            fadeOut(animationSpec = Motion.exit(Motion.MEDIUM - 60)))
                 },
                 label = "settings-tab"
             ) { current ->
@@ -1128,11 +1131,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.aboutTab(context: Con
         }
     }
     item {
-        SectionCard(title = "最近更新", subtitle = "v1.3.0", icon = Icons.Default.AutoAwesome) {
+        SectionCard(title = "最近更新", subtitle = "v1.3.1", icon = Icons.Default.AutoAwesome) {
             listOf(
+                "键盘弹出时自动收起次要区域，译文输入框不再被挤压遮挡",
+                "页面转场与展开动画统一曲线与时长，过渡更顺滑",
                 "设置页重构为 AI / 界面 / 数据 / 高级 / 关于 五个分类",
                 "系统提示词与术语表开放给用户自定义",
-                "页面转场与卡片展开动画",
                 "翻译记忆、撤销重做、查找替换、朗读、收藏",
                 "导出支持 Markdown / CSV / JSON，支持分享",
                 "用量统计与近 7 天进度图表",

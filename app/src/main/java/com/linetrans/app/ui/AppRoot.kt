@@ -3,9 +3,10 @@ package com.linetrans.app.ui
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
@@ -17,8 +18,6 @@ import androidx.navigation.navArgument
 import com.linetrans.app.data.SettingsRepository
 import com.linetrans.app.ui.settings.SettingsScreen
 
-private const val DURATION = 300
-
 @Composable
 fun AppRoot() {
     val nav = rememberNavController()
@@ -26,22 +25,30 @@ fun AppRoot() {
 
     val enter: AnimatedContentTransitionScope<*>.() -> EnterTransition = {
         if (animate) {
-            slideInHorizontally(animationSpec = tween(DURATION)) { it / 5 } + fadeIn(tween(DURATION))
+            slideInHorizontally(animationSpec = Motion.enter(Motion.SLOW)) { it / 3 } +
+                fadeIn(animationSpec = Motion.enter(Motion.SLOW)) +
+                scaleIn(initialScale = 0.98f, animationSpec = Motion.enter(Motion.SLOW))
         } else EnterTransition.None
     }
     val exit: AnimatedContentTransitionScope<*>.() -> ExitTransition = {
         if (animate) {
-            slideOutHorizontally(animationSpec = tween(DURATION)) { -it / 8 } + fadeOut(tween(DURATION / 2))
+            slideOutHorizontally(animationSpec = Motion.exit(Motion.MEDIUM)) { -it / 6 } +
+                fadeOut(animationSpec = Motion.exit(Motion.MEDIUM)) +
+                scaleOut(targetScale = 0.99f, animationSpec = Motion.exit(Motion.MEDIUM))
         } else ExitTransition.None
     }
     val popEnter: AnimatedContentTransitionScope<*>.() -> EnterTransition = {
         if (animate) {
-            slideInHorizontally(animationSpec = tween(DURATION)) { -it / 5 } + fadeIn(tween(DURATION))
+            slideInHorizontally(animationSpec = Motion.enter(Motion.SLOW)) { -it / 3 } +
+                fadeIn(animationSpec = Motion.enter(Motion.SLOW)) +
+                scaleIn(initialScale = 0.98f, animationSpec = Motion.enter(Motion.SLOW))
         } else EnterTransition.None
     }
     val popExit: AnimatedContentTransitionScope<*>.() -> ExitTransition = {
         if (animate) {
-            slideOutHorizontally(animationSpec = tween(DURATION)) { it / 8 } + fadeOut(tween(DURATION / 2))
+            slideOutHorizontally(animationSpec = Motion.exit(Motion.MEDIUM)) { it / 6 } +
+                fadeOut(animationSpec = Motion.exit(Motion.MEDIUM)) +
+                scaleOut(targetScale = 0.99f, animationSpec = Motion.exit(Motion.MEDIUM))
         } else ExitTransition.None
     }
 
