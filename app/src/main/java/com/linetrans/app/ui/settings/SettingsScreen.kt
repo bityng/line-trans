@@ -1424,8 +1424,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.aboutTab(context: Con
         }
     }
     item {
-        SectionCard(title = "最近更新", subtitle = "v1.6.0", icon = Icons.Default.AutoAwesome) {
+        SectionCard(title = "最近更新", subtitle = "v1.7.0", icon = Icons.Default.AutoAwesome) {
             listOf(
+                "逐句切分重写：支持缩写（Mr. / U.S. / e.g.）、小数点、网址、首字母缩写，省略号不再拆碎",
+                "段落内的排版换行会自动合并成一句（英文补空格、中日韩不补），空行才分段",
+                "网页端：长文档分窗口渲染（每批 60 句，滚动自动加载），上千句也不卡",
+                "网页端：新增进度环、句号跳转、按文件夹分组的文档列表、手机端抽屉侧栏",
+                "网页端：原文/译文分区显示，双击原文可直接编辑",
                 "新增内置离线词库（4 万常用词 + 词形还原），点词秒出中文释义，不再依赖联网",
                 "释义默认中文，英文释义折叠起来；可切换中英对照 / 英文原版",
                 "支持导入更大的词典文件（ECDICT CSV 或制表符文本），导入后立即生效",

@@ -47,22 +47,145 @@ object TextParser {
         }
     }
 
+    /** 常见缩写，避免 "Mr." "U.S." 被当成句末 */
+    private val ABBREVIATIONS = setOf(
+        "mr", "mrs", "ms", "dr", "prof", "st", "jr", "sr", "vs", "etc", "e.g", "i.e", "a.m", "p.m",
+        "no", "fig", "inc", "ltd", "co", "dept", "univ", "approx", "cf", "al", "ibid", "eg", "ie",
+        "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+        "mon", "tue", "wed", "thu", "fri", "sat", "sun", "u.s", "u.k", "u.n", "d.c",
+        "ph.d", "b.a", "m.a", "b.sc", "m.sc", "vol", "pp", "ed", "eds", "trans"
+    )
+
+    private const val CLOSERS = "”’\"'）)]》〉」』】〕｝}"
+
     private fun parseLines(text: String): List<TranslationUnit> {
-        return text.lines()
+        return normalizeNewlines(text)
+            .split('\n')
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .map { TranslationUnit(it) }
     }
 
+    /**
+     * 逐句切分（比原来的正则更稳）：
+     *  - 空行分段；段落内的软换行先合并（英文补空格、中日韩不补）
+     *  - 只在真正的句末标点断开：。！？!?… ；不再在英文分号处断开
+     *  - 保护小数点（3.14）、网址（example.com）、缩写（Mr. / U.S. / e.g.）与首字母缩写（J. K.）
+     *  - 省略号连续的点会压成一个 …，句末的引号/括号跟着上一句
+     *  - 只有标点或单字的碎片会并回上一句
+     */
     private fun parseSentences(text: String): List<TranslationUnit> {
-        // 以中英文句号/问号/感叹号/分号/省略号为界切分句子，并保留标点；
-        // 同时把换行作为句子边界，英文缩写等场景下也不会整段吞掉。
-        val regex = Regex("[^。！？!?；;.…\\n]+[。！？?!；;.…\\n]*[”’\"'）)]*")
-        return regex.findAll(text)
-            .map { it.value.trim() }
+        val raw = mutableListOf<String>()
+        normalizeNewlines(text).split(Regex("\n[ \t]*\n+")).forEach { paragraph ->
+            val lines = paragraph.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+            if (lines.isEmpty()) return@forEach
+            splitInto(raw, joinSoftLines(lines))
+        }
+        val merged = mutableListOf<String>()
+        raw.forEach { sentence ->
+            val core = sentence.filter { it.isLetterOrDigit() }
+            if (merged.isNotEmpty() && core.length <= 1) {
+                merged[merged.lastIndex] = merged.last() + sentence
+            } else {
+                merged.add(sentence)
+            }
+        }
+        return merged
+            .map { it.replace(Regex("[ \t]{2,}"), " ").trim() }
             .filter { it.isNotEmpty() }
             .map { TranslationUnit(it) }
-            .toList()
+    }
+
+    private fun normalizeNewlines(text: String): String =
+        text.replace("\r\n", "\n").replace('\r', '\n')
+
+    /** 段落内的换行多为排版软换行，合并成一行再断句。 */
+    private fun joinSoftLines(lines: List<String>): String {
+        val sb = StringBuilder(lines.first())
+        for (i in 1 until lines.size) {
+            val prev = sb.last()
+            val next = lines[i].first()
+            val latinPrev = (prev in 'A'..'Z' || prev in 'a'..'z' || prev.isDigit() ||
+                prev in ".,;:!?)]}\"'”’")
+            val latinNext = (next in 'A'..'Z' || next in 'a'..'z' || next.isDigit() ||
+                next in "([{\"'“‘")
+            val cjk = isCjk(prev) || isCjk(next)
+            if (latinPrev && latinNext && !cjk) sb.append(' ')
+            sb.append(lines[i])
+        }
+        return sb.toString()
+    }
+
+    private fun isCjk(ch: Char): Boolean {
+        val code = ch.code
+        return (code in 0x3040..0x30FF) || (code in 0x3400..0x4DBF) || (code in 0x4E00..0x9FFF) ||
+            (code in 0xF900..0xFAFF) || (code in 0xFF66..0xFF9F)
+    }
+
+    private fun isSentenceEnd(ch: Char): Boolean =
+        ch == '。' || ch == '！' || ch == '？' || ch == '!' || ch == '?' || ch == '…' || ch == '；'
+
+    private fun isAbbreviation(prefix: String): Boolean {
+        val match = Regex("([A-Za-z][A-Za-z.]*)$").find(prefix) ?: return false
+        val rawToken = match.groupValues[1]
+        val token = rawToken.lowercase().trimEnd('.')
+        if (token.length == 1 && rawToken.trim().firstOrNull()?.isUpperCase() == true) return true
+        return ABBREVIATIONS.contains(token)
+    }
+
+    private fun splitInto(out: MutableList<String>, text: String) {
+        var buffer = StringBuilder()
+        var i = 0
+        while (i < text.length) {
+            val ch = text[i]
+            buffer.append(ch)
+            val isDot = ch == '.'
+            val isEllipsis = ch == '…'
+            val isTripleDot = isDot && i >= 2 && text.substring(i - 2, i + 1) == "..."
+            if (!isSentenceEnd(ch) && !isDot) {
+                i++
+                continue
+            }
+
+            if (isEllipsis || isTripleDot) {
+                var start = i
+                while (start > 0 && (text[start - 1] == '.' || text[start - 1] == '…')) start--
+                var end = i + 1
+                while (end < text.length && (text[end] == '.' || text[end] == '…')) end++
+                val drop = i - start + 1
+                buffer.setLength(buffer.length - drop)
+                buffer.append('…')
+                while (end < text.length && CLOSERS.indexOf(text[end]) >= 0) {
+                    buffer.append(text[end])
+                    end++
+                }
+                out.add(buffer.toString().trim())
+                buffer = StringBuilder()
+                i = end
+                continue
+            }
+
+            if (isDot) {
+                val prev = text.getOrNull(i - 1)
+                val next = text.getOrNull(i + 1)
+                if (prev != null && next != null && prev.isDigit() && next.isDigit()) { i++; continue }
+                if (next != null && (next.isLetterOrDigit())) { i++; continue }
+                if (isAbbreviation(buffer.substring(0, buffer.length - 1))) { i++; continue }
+                if (next != null && !next.isWhitespace() && CLOSERS.indexOf(next) < 0) { i++; continue }
+            }
+
+            var end = i + 1
+            while (end < text.length && CLOSERS.indexOf(text[end]) >= 0) {
+                buffer.append(text[end])
+                end++
+            }
+            val sentence = buffer.toString().trim()
+            if (sentence.isNotEmpty()) out.add(sentence)
+            buffer = StringBuilder()
+            i = end
+        }
+        val tail = buffer.toString().trim()
+        if (tail.isNotEmpty()) out.add(tail)
     }
 
     fun detectLanguage(text: String): String {
