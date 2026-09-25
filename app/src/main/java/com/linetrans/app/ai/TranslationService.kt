@@ -134,7 +134,6 @@ class TranslationService(private val context: Context) {
         result
     }
 
-    /** 设置页“测试连接”：发一条极短的请求，返回耗时描述。 */
     /** 通用对话调用（供划词词典等复用），返回纯文本。 */
     suspend fun rawChat(settings: AppSettings, system: String, user: String): String = withContext(Dispatchers.IO) {
         val provider = settings.activeProvider
@@ -148,6 +147,7 @@ class TranslationService(private val context: Context) {
         result.text
     }
 
+    /** 设置页“测试连接”：发一条极短的请求，返回耗时描述。 */
     suspend fun testConnection(settings: AppSettings): Result2 = withContext(Dispatchers.IO) {
         val provider = settings.activeProvider ?: return@withContext Result2(false, "未选择 API 提供商", 0)
         val model = settings.activeModel ?: return@withContext Result2(false, "未选择模型", 0)
