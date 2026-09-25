@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit
 object DictionaryService {
 
     enum class Source(val id: String, val label: String) {
+        LOCAL("local", "本地词库"),
         OXFORD_WEB("oxford_web", "牛津词典（网页）"),
         OXFORD_API("oxford_api", "牛津词典（API）"),
         WIKTIONARY("wiktionary", "Wiktionary"),
@@ -88,19 +89,60 @@ object DictionaryService {
         Entry(word = word, error = lastError ?: "没有查到这个词的释义")
     }
 
-    private fun buildOrder(settings: AppSettings): List<Source> = when (settings.dictionarySource) {
-        Source.OXFORD_API.id -> listOf(Source.OXFORD_API, Source.OXFORD_WEB, Source.AI, Source.WIKTIONARY)
-        Source.OXFORD_WEB.id -> listOf(Source.OXFORD_WEB, Source.OXFORD_API, Source.AI, Source.WIKTIONARY)
-        Source.WIKTIONARY.id -> listOf(Source.WIKTIONARY, Source.OXFORD_WEB, Source.AI)
-        Source.AI.id -> listOf(Source.AI, Source.OXFORD_WEB, Source.WIKTIONARY)
-        else -> listOf(Source.OXFORD_WEB, Source.OXFORD_API, Source.WIKTIONARY, Source.AI)
+    private fun buildOrder(settings: AppSettings): List<Source> {
+        val order = when (settings.dictionarySource) {
+        Source.LOCAL.id -> listOf(Source.LOCAL, Source.OXFORD_WEB, Source.WIKTIONARY, Source.AI)
+        Source.OXFORD_API.id -> listOf(Source.LOCAL, Source.OXFORD_API, Source.OXFORD_WEB, Source.AI, Source.WIKTIONARY)
+        Source.OXFORD_WEB.id -> listOf(Source.LOCAL, Source.OXFORD_WEB, Source.OXFORD_API, Source.AI, Source.WIKTIONARY)
+        Source.WIKTIONARY.id -> listOf(Source.LOCAL, Source.WIKTIONARY, Source.OXFORD_WEB, Source.AI)
+        Source.AI.id -> listOf(Source.LOCAL, Source.AI, Source.OXFORD_WEB, Source.WIKTIONARY)
+        else -> listOf(Source.LOCAL, Source.OXFORD_WEB, Source.OXFORD_API, Source.WIKTIONARY, Source.AI)
+        }
+        return if (settings.localDictionaryEnabled) order else order.filter { it != Source.LOCAL }
     }
 
     private fun fetch(source: Source, settings: AppSettings, word: String, aiService: TranslationService?): Entry = when (source) {
+        Source.LOCAL -> local(word)
         Source.OXFORD_WEB -> oxfordWeb(word)
         Source.OXFORD_API -> oxfordApi(settings, word)
         Source.WIKTIONARY -> wiktionary(word)
         Source.AI -> aiEntry(settings, word, aiService)
+    }
+
+    // ---------- 本地词库（离线，最快） ----------
+
+    private fun local(word: String): Entry {
+        if (!LocalDictionary.isReady) {
+            kotlinx.coroutines.runBlocking { LocalDictionary.ensureLoaded() }
+        }
+        val item = LocalDictionary.lookup(word)
+            ?: return Entry(word = word, source = Source.LOCAL.label, error = "本地词库没有收录")
+        // ECDICT 的释义用 `\n` 分隔多行，这里拆成多条
+        val senses = item.meaning
+            .replace("\\n", "\n")
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .take(6)
+            .map { line -> splitPos(line) }
+        return Entry(
+            word = item.word,
+            phonetic = item.phonetic.takeIf { it.isNotBlank() }?.let { if (it.startsWith("/")) it else "/$it/" },
+            senses = senses,
+            source = Source.LOCAL.label,
+            url = "https://www.oxfordlearnersdictionaries.com/definition/english/" + word.lowercase()
+        )
+    }
+
+    /** 把 “n. 名词解释” 拆成词性 + 释义；`[网络]` 之类的标记作为词性展示。 */
+    private fun splitPos(line: String): Sense {
+        val clean = line.trim()
+        val match = Regex("^((?:[a-z]+|\\[[^]]+])[\\.\\s]+)\\s*(.*)$", RegexOption.IGNORE_CASE).find(clean)
+        return if (match != null && match.groupValues[1].length <= 12 && match.groupValues[2].isNotBlank()) {
+            Sense(match.groupValues[1].trim().trimEnd('.'), match.groupValues[2].trim())
+        } else {
+            Sense("", clean)
+        }
     }
 
     // ---------- 牛津词典网页 ----------

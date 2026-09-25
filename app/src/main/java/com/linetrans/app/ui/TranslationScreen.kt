@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -127,6 +126,7 @@ import com.linetrans.app.model.TranslationUnit
 import com.linetrans.app.model.UnitMode
 import com.linetrans.app.util.CostCalculator
 import com.linetrans.app.util.TextParser
+import com.linetrans.app.util.SpeechService
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -198,17 +198,8 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
     val undoStack = remember(docId) { mutableStateListOf<EditSnapshot>() }
     val redoStack = remember(docId) { mutableStateListOf<EditSnapshot>() }
 
-    // TTS
-    val ttsRef = remember { mutableStateOf<TextToSpeech?>(null) }
-    DisposableEffect(Unit) {
-        val engine = TextToSpeech(context) { }
-        ttsRef.value = engine
-        onDispose {
-            runCatching { engine.stop() }
-            runCatching { engine.shutdown() }
-            ttsRef.value = null
-        }
-    }
+    // 朗读引擎在应用启动时初始化，这里只做一次保险
+    LaunchedEffect(Unit) { SpeechService.init(context) }
 
     // 屏幕常亮（可选）
     DisposableEffect(settings.keepScreenOn) {
@@ -308,16 +299,11 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
     }
 
     fun speak(text: String) {
-        val engine = ttsRef.value
-        if (engine == null) {
-            notify("语音引擎不可用")
+        if (text.isBlank()) {
+            notify("没有可朗读的内容")
             return
         }
-        if (text.isBlank()) return
-        runCatching {
-            engine.setLanguage(Locale.getDefault())
-            engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "linetrans")
-        }.onFailure { notify("朗读失败：" + (it.message ?: "未知错误")) }
+        SpeechService.speak(text).onFailure { notify(it.message ?: "朗读失败") }
     }
 
     fun copyToClipboard(text: String, label: String) {
@@ -1093,6 +1079,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
             entry = lookupEntry,
             localEntry = WordbookRepository.find(word),
             loading = lookupLoading,
+            definitionLanguage = SettingsRepository.settings.definitionLanguage,
             onDismiss = { lookupWord = null },
             onSpeak = { speak(it) },
             onCopy = { copyToClipboard(it, "释义") },

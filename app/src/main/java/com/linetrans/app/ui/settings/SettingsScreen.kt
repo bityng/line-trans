@@ -76,6 +76,7 @@ import com.linetrans.app.data.DocRepository
 import com.linetrans.app.data.SettingsRepository
 import com.linetrans.app.data.StorageManager
 import com.linetrans.app.data.WordbookRepository
+import com.linetrans.app.ai.LocalDictionary
 import com.linetrans.app.ui.Motion
 import com.linetrans.app.model.BillingConfig
 import com.linetrans.app.model.ModelConfig
@@ -278,6 +279,13 @@ private fun DictionaryCard(context: Context, notify: Notify) {
     var oxfordId by remember(settings.oxfordAppId) { mutableStateOf(settings.oxfordAppId) }
     var oxfordKey by remember(settings.oxfordAppKey) { mutableStateOf(settings.oxfordAppKey) }
 
+    val dictPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching { LocalDictionary.importFromUri(context, uri) }
+            .onSuccess { notify("已导入本地词典 $it 条，立即生效") }
+            .onFailure { notify("导入词典失败：" + (it.message ?: "文件无法读取")) }
+    }
+
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         runCatching {
@@ -304,6 +312,7 @@ private fun DictionaryCard(context: Context, notify: Notify) {
         ChipsRow(
             options = listOf(
                 "auto" to "自动",
+                "local" to "仅本地",
                 "oxford_web" to "牛津网页",
                 "oxford_api" to "牛津 API",
                 "wiktionary" to "Wiktionary",
@@ -314,7 +323,56 @@ private fun DictionaryCard(context: Context, notify: Notify) {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            "「自动」会依次尝试：牛津网页 → 牛津 API → Wiktionary → AI；查不到时自动换下一个来源。",
+            "「自动」会依次尝试：本地词库 → 牛津网页 → 牛津 API → Wiktionary → AI；查不到时自动换下一个来源。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            title = "使用本地词库（离线，最快）",
+            subtitle = if (LocalDictionary.isReady) {
+                "已加载 " + LocalDictionary.size + " 条" +
+                    if (LocalDictionary.hasImport(context)) "（含导入词典）" else ""
+            } else {
+                "正在后台加载…"
+            },
+            checked = settings.localDictionaryEnabled,
+            onCheckedChange = { on -> SettingsRepository.update { it.copy(localDictionaryEnabled = on) } }
+        )
+        Spacer(Modifier.height(4.dp))
+        Text("释义语言", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(6.dp))
+        ChipsRow(
+            options = listOf("zh" to "中文", "both" to "中英对照", "en" to "英文原版"),
+            selected = settings.definitionLanguage,
+            onSelect = { lang -> SettingsRepository.update { it.copy(definitionLanguage = lang) } }
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "默认「中文」，英文释义会折叠起来，需要时点开即可。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(10.dp))
+        Text("扩展词典", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(6.dp))
+        Row {
+            OutlinedButton(
+                onClick = { dictPicker.launch(arrayOf("*/*")) },
+                modifier = Modifier.weight(1f)
+            ) { Text("导入词典文件") }
+            if (LocalDictionary.hasImport(context)) {
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(onClick = {
+                    LocalDictionary.clearImport(context)
+                    notify("已移除导入的词典，恢复内置词库")
+                }) { Text("移除") }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "支持两种格式：制表符文本（单词/音标/释义）或 ECDICT 的 CSV；" +
+                "导入后立即生效，查词不联网。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1366,8 +1424,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.aboutTab(context: Con
         }
     }
     item {
-        SectionCard(title = "最近更新", subtitle = "v1.5.0", icon = Icons.Default.AutoAwesome) {
+        SectionCard(title = "最近更新", subtitle = "v1.6.0", icon = Icons.Default.AutoAwesome) {
             listOf(
+                "新增内置离线词库（4 万常用词 + 词形还原），点词秒出中文释义，不再依赖联网",
+                "释义默认中文，英文释义折叠起来；可切换中英对照 / 英文原版",
+                "支持导入更大的词典文件（ECDICT CSV 或制表符文本），导入后立即生效",
+                "修复朗读没有声音：等待语音引擎初始化并按语言自动切换",
+                "网页端修复设置弹窗一直显示等 bug，并换了新的应用图标（favicon / 主屏图标）",
                 "划词查义：点单词在词上方浮出释义，优先查「我的词库」",
                 "词典来源可选牛津网页 / 牛津 API / Wiktionary / AI，并可自动回退",
                 "我的词库：一键收藏释义、编辑器批量维护、导入导出",

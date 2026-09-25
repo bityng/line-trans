@@ -53,9 +53,10 @@ object SettingsRepository {
         requestTimeoutSec = requestTimeoutSec.coerceIn(10, 600)
         autoSaveMs = autoSaveMs.coerceIn(200, 5000)
         uiScale = uiScale.coerceIn(0.8f, 1.5f)
-        if (dictionarySource !in listOf("auto", "oxford_web", "oxford_api", "wiktionary", "ai")) {
+        if (dictionarySource !in listOf("auto", "local", "oxford_web", "oxford_api", "wiktionary", "ai")) {
             dictionarySource = "auto"
         }
+        if (definitionLanguage !in listOf("zh", "both", "en")) definitionLanguage = "zh"
         if (promptTemplateId != AppSettings.DEFAULT_PROMPT_ID &&
             PromptTemplates.all.none { it.id == promptTemplateId }
         ) {

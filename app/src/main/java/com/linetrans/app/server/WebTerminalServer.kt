@@ -35,9 +35,8 @@ class WebTerminalServer(
         val uri = session.uri.removePrefix("/")
         return when {
             uri.startsWith("api/") -> api.handle(session)
-            uri.isEmpty() || uri == "index.html" || uri == "app" -> serveWebApp("index.html", "text/html; charset=utf-8")
-            uri == "app.js" -> serveWebApp("app.js", "text/javascript; charset=utf-8")
-            uri == "style.css" -> serveWebApp("style.css", "text/css; charset=utf-8")
+            uri.isEmpty() || uri == "app" -> serveWebApp("index.html")
+            uri in WEB_ASSETS -> serveWebApp(uri)
             uri == "terminal" -> serveHtml()
             uri == "health" -> newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "ok")
             uri.startsWith("web_terminal/") -> serveAsset(uri.removePrefix("web_terminal/"))
@@ -47,14 +46,29 @@ class WebTerminalServer(
     }
 
     /** 网页翻译台的静态资源（assets/web/）。 */
-    private fun serveWebApp(name: String, mime: String): Response {
+    private fun serveWebApp(name: String, mime: String = ""): Response {
         val bytes = runCatching { context.assets.open("web/" + name).readBytes() }.getOrNull()
             ?: return newFixedLengthResponse(
                 Response.Status.NOT_FOUND,
                 "text/plain; charset=utf-8",
                 "缺少 assets/web/$name"
             )
-        return newFixedLengthResponse(Response.Status.OK, mime, ByteArrayInputStream(bytes), bytes.size.toLong())
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            mime.ifBlank { mimeOf(name) },
+            ByteArrayInputStream(bytes),
+            bytes.size.toLong()
+        )
+    }
+
+    private fun mimeOf(name: String): String = when {
+        name.endsWith(".html") -> "text/html; charset=utf-8"
+        name.endsWith(".js") -> "text/javascript; charset=utf-8"
+        name.endsWith(".css") -> "text/css; charset=utf-8"
+        name.endsWith(".json") -> "application/json; charset=utf-8"
+        name.endsWith(".svg") -> "image/svg+xml"
+        name.endsWith(".png") -> "image/png"
+        else -> "application/octet-stream"
     }
 
     /** 设置了访问令牌时，HTTP 与 WebSocket 都必须携带 ?token=xxx。 */
@@ -179,5 +193,9 @@ class WebTerminalServer(
 
     companion object {
         private const val SOCKET_READ_TIMEOUT = 5000
+        private val WEB_ASSETS = setOf(
+            "index.html", "app.js", "style.css", "icon.svg",
+            "icon-192.png", "icon-512.png", "manifest.json"
+        )
     }
 }

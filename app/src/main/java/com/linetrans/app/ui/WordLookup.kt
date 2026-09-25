@@ -141,6 +141,7 @@ fun WordDefinitionPopup(
     entry: DictionaryService.Entry?,
     localEntry: WordEntry?,
     loading: Boolean,
+    definitionLanguage: String,
     onDismiss: () -> Unit,
     onSpeak: (String) -> Unit,
     onCopy: (String) -> Unit,
@@ -151,6 +152,12 @@ fun WordDefinitionPopup(
 ) {
     val density = LocalDensity.current
     val margin = with(density) { 12.dp.roundToPx() }
+    var showEnglish by remember(word, definitionLanguage) {
+        mutableStateOf(definitionLanguage != "zh")
+    }
+    val fromLocalDict = entry?.source == DictionaryService.Source.LOCAL.label
+    val zhSenses = if (fromLocalDict) entry?.senses.orEmpty() else emptyList()
+    val enSenses = if (fromLocalDict) emptyList() else entry?.senses.orEmpty()
 
     Popup(
         popupPositionProvider = AboveTextPositionProvider(anchor, margin),
@@ -274,7 +281,9 @@ fun WordDefinitionPopup(
                             Spacer(Modifier.height(8.dp))
                         }
                         val translation = entry?.translation
-                        if (!translation.isNullOrBlank()) {
+                        val showZhBox = !translation.isNullOrBlank() &&
+                            (localEntry == null || localEntry.meaning.trim() != translation.trim())
+                        if (showZhBox && !translation.isNullOrBlank()) {
                             Surface(
                                 color = MaterialTheme.colorScheme.primaryContainer,
                                 shape = RoundedCornerShape(10.dp),
@@ -297,35 +306,33 @@ fun WordDefinitionPopup(
                             }
                             Spacer(Modifier.height(6.dp))
                         }
-                        Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
-                            entry?.senses?.forEachIndexed { index, sense ->
-                                if (index > 0) {
-                                    Spacer(Modifier.height(8.dp))
+                        // 中文释义（来自本地词库，最常用）
+                        if (zhSenses.isNotEmpty()) {
+                            Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState())) {
+                                zhSenses.forEachIndexed { index, sense -> SenseLine(sense, index > 0) }
+                            }
+                        }
+                        // 英文释义：默认折叠，需要时可以展开
+                        if (enSenses.isNotEmpty()) {
+                            if (definitionLanguage == "zh") {
+                                TextButton(
+                                    onClick = { showEnglish = !showEnglish },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                                ) {
+                                    Text(
+                                        if (showEnglish) "收起英文释义" else "显示英文释义（" + enSenses.size + "）",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                            if (showEnglish) {
+                                if (zhSenses.isNotEmpty()) {
+                                    Spacer(Modifier.height(6.dp))
                                     HorizontalDivider()
-                                    Spacer(Modifier.height(8.dp))
+                                    Spacer(Modifier.height(6.dp))
                                 }
-                                Row {
-                                    if (sense.partOfSpeech.isNotBlank()) {
-                                        Text(
-                                            sense.partOfSpeech,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.width(56.dp)
-                                        )
-                                    }
-                                    Text(
-                                        sense.definition,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                sense.example?.takeIf { it.isNotBlank() }?.let { example ->
-                                    Text(
-                                        "例：" + example,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 2.dp, start = if (sense.partOfSpeech.isBlank()) 0.dp else 56.dp)
-                                    )
+                                Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                                    enSenses.forEachIndexed { index, sense -> SenseLine(sense, index > 0) }
                                 }
                             }
                         }
@@ -381,3 +388,36 @@ fun WordDefinitionPopup(
 
 /** 释义卡片里用到的高亮底色（浅深色都可读）。 */
 internal val LookupHighlight: Color @Composable get() = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+
+/** 一条释义：词性（可选）+ 正文 + 例句。 */
+@Composable
+private fun SenseLine(sense: DictionaryService.Sense, divider: Boolean) {
+    if (divider) {
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(8.dp))
+    }
+    Row {
+        if (sense.partOfSpeech.isNotBlank()) {
+            Text(
+                sense.partOfSpeech,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.width(52.dp)
+            )
+        }
+        Text(
+            sense.definition,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    sense.example?.takeIf { it.isNotBlank() }?.let { example ->
+        Text(
+            "例：" + example,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp, start = if (sense.partOfSpeech.isBlank()) 0.dp else 52.dp)
+        )
+    }
+}

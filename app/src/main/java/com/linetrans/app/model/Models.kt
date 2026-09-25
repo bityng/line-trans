@@ -170,6 +170,10 @@ data class AppSettings(
     var wordLookupEnabled: Boolean = true,
     /** 词典来源：auto / oxford_web / oxford_api / wiktionary / ai。 */
     var dictionarySource: String = "auto",
+    /** 优先使用内置/导入的离线词库。 */
+    var localDictionaryEnabled: Boolean = true,
+    /** 释义语言：zh（只显示中文）/ both（中英对照）/ en（英文原版）。 */
+    var definitionLanguage: String = "zh",
     /** 用 AI 为英文释义补一条中文解释。 */
     var dictionaryAiExplain: Boolean = true,
     var oxfordAppId: String = "",
