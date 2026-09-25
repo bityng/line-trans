@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Translate
@@ -73,6 +74,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.linetrans.app.data.DocRepository
 import com.linetrans.app.data.SettingsRepository
+import com.linetrans.app.data.StorageManager
+import com.linetrans.app.data.WordbookRepository
 import com.linetrans.app.ui.Motion
 import com.linetrans.app.model.BillingConfig
 import com.linetrans.app.model.ModelConfig
@@ -143,7 +146,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     when (current) {
-                        SettingsTab.AI -> aiTab(::notify)
+                        SettingsTab.AI -> aiTab(context, ::notify)
                         SettingsTab.UI -> uiTab()
                         SettingsTab.DATA -> dataTab(context, ::notify)
                         SettingsTab.ADVANCED -> advancedTab(context, ::notify)
@@ -159,7 +162,7 @@ private typealias Notify = (String) -> Unit
 
 // ———————————————————————— AI 翻译 ————————————————————————
 
-private fun androidx.compose.foundation.lazy.LazyListScope.aiTab(notify: Notify) {
+private fun androidx.compose.foundation.lazy.LazyListScope.aiTab(context: Context, notify: Notify) {
     val settings = SettingsRepository.settings
 
     item {
@@ -259,6 +262,205 @@ private fun androidx.compose.foundation.lazy.LazyListScope.aiTab(notify: Notify)
     item {
         GlossaryCard(notify = notify)
     }
+
+    item {
+        DictionaryCard(context, notify)
+    }
+}
+
+// ———————————————————————— 划词词典 ————————————————————————
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DictionaryCard(context: Context, notify: Notify) {
+    val settings = SettingsRepository.settings
+    var showEditor by remember { mutableStateOf(false) }
+    var oxfordId by remember(settings.oxfordAppId) { mutableStateOf(settings.oxfordAppId) }
+    var oxfordKey by remember(settings.oxfordAppKey) { mutableStateOf(settings.oxfordAppKey) }
+
+    val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val text = StorageManager.readText(context, uri)
+            WordbookRepository.importText(text)
+        }.onSuccess { notify("已导入 " + it + " 条词条") }
+            .onFailure { notify("导入失败：" + (it.message ?: "文件无法读取")) }
+    }
+
+    SectionCard(
+        title = "划词词典",
+        subtitle = "触摸单词弹出释义，优先查我的词库",
+        icon = Icons.Default.AutoAwesome
+    ) {
+        SwitchRow(
+            title = "点词查义",
+            subtitle = "在原文（只读时译文也可以）点一下单词即可查释义",
+            checked = settings.wordLookupEnabled,
+            onCheckedChange = { on -> SettingsRepository.update { it.copy(wordLookupEnabled = on) } }
+        )
+        Spacer(Modifier.height(8.dp))
+        Text("词典来源", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(6.dp))
+        ChipsRow(
+            options = listOf(
+                "auto" to "自动",
+                "oxford_web" to "牛津网页",
+                "oxford_api" to "牛津 API",
+                "wiktionary" to "Wiktionary",
+                "ai" to "AI 释义"
+            ),
+            selected = settings.dictionarySource,
+            onSelect = { src -> SettingsRepository.update { it.copy(dictionarySource = src) } }
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "「自动」会依次尝试：牛津网页 → 牛津 API → Wiktionary → AI；查不到时自动换下一个来源。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(10.dp))
+        Row {
+            OutlinedTextField(
+                value = oxfordId,
+                onValueChange = {
+                    oxfordId = it
+                    SettingsRepository.update { s -> s.copy(oxfordAppId = it.trim()) }
+                },
+                label = { Text("牛津 app_id（可选）") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            OutlinedTextField(
+                value = oxfordKey,
+                onValueChange = {
+                    oxfordKey = it
+                    SettingsRepository.update { s -> s.copy(oxfordAppKey = it.trim()) }
+                },
+                label = { Text("app_key（可选）") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        SwitchRow(
+            title = "用 AI 补充中文释义",
+            subtitle = "词典给出英文释义后，再用当前模型补一行中文",
+            checked = settings.dictionaryAiExplain,
+            onCheckedChange = { on -> SettingsRepository.update { it.copy(dictionaryAiExplain = on) } }
+        )
+    }
+
+    SectionCard(
+        title = "我的词库",
+        subtitle = "共 " + WordbookRepository.count() + " 条 · 查词时优先显示",
+        icon = Icons.Default.Star
+    ) {
+        if (WordbookRepository.words.isEmpty()) {
+            Text(
+                "还没有词条。查词浮层里点「加入词库」即可收藏，或直接导入文本。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            WordbookRepository.words.take(6).forEach { entry ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(entry.term, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.width(88.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        entry.meaning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    IconButton(onClick = {
+                        WordbookRepository.remove(entry.term)
+                        notify("已删除：" + entry.term)
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+            if (WordbookRepository.count() > 6) {
+                Text(
+                    "…… 其余 " + (WordbookRepository.count() - 6) + " 条可在词库编辑器里查看",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+        Row {
+            Button(onClick = { showEditor = true }, modifier = Modifier.weight(1f)) { Text("编辑词库") }
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = { importPicker.launch(arrayOf("text/*", "application/json")) }) {
+                Text("导入")
+            }
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = {
+                val text = WordbookRepository.exportText()
+                if (text.isBlank()) {
+                    notify("词库为空")
+                    return@OutlinedButton
+                }
+                val dir = SettingsRepository.settings.storageDirUri
+                if (dir.isBlank()) {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("词库", text))
+                    notify("未设置数据文件夹，已复制词库到剪贴板")
+                } else {
+                    runCatching {
+                        StorageManager.writeTextToFolder(context, dir, "linetrans-wordbook.txt", text)
+                    }.onSuccess { notify("已导出到数据文件夹") }
+                        .onFailure { notify("导出失败：" + (it.message ?: "未知错误")) }
+                }
+            }) { Text("导出") }
+        }
+    }
+
+    if (showEditor) {
+        WordbookDialog(
+            onDismiss = { showEditor = false },
+            onSave = { text ->
+                WordbookRepository.clear()
+                val count = WordbookRepository.importText(text)
+                showEditor = false
+                notify("词库已保存，共 " + count + " 条")
+            }
+        )
+    }
+}
+
+@Composable
+private fun WordbookDialog(onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var text by remember { mutableStateOf(WordbookRepository.exportText()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑词库") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    minLines = 8,
+                    label = { Text("每行一条：单词=释义，或 单词=音标=释义") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "以 # 开头的行会被忽略；保存会整体覆盖当前词库。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("保存") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
 }
 
 @Composable
@@ -1164,8 +1366,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.aboutTab(context: Con
         }
     }
     item {
-        SectionCard(title = "最近更新", subtitle = "v1.4.0", icon = Icons.Default.AutoAwesome) {
+        SectionCard(title = "最近更新", subtitle = "v1.5.0", icon = Icons.Default.AutoAwesome) {
             listOf(
+                "划词查义：点单词在词上方浮出释义，优先查「我的词库」",
+                "词典来源可选牛津网页 / 牛津 API / Wiktionary / AI，并可自动回退",
+                "我的词库：一键收藏释义、编辑器批量维护、导入导出",
                 "局域网 Web 服务改为网页翻译台：浏览器里继续翻译、AI 翻译与导出",
                 "新增只读「查看」模式，并记住每篇文档的阅读位置",
                 "修复切换逐行/逐句时跳回第一句的问题",

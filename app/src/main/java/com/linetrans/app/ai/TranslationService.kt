@@ -135,6 +135,19 @@ class TranslationService(private val context: Context) {
     }
 
     /** 设置页“测试连接”：发一条极短的请求，返回耗时描述。 */
+    /** 通用对话调用（供划词词典等复用），返回纯文本。 */
+    suspend fun rawChat(settings: AppSettings, system: String, user: String): String = withContext(Dispatchers.IO) {
+        val provider = settings.activeProvider
+            ?: throw IllegalStateException("请先在设置中添加并选择 API 提供商")
+        val model = settings.activeModel ?: throw IllegalStateException("请先选择模型")
+        if (provider.baseUrl.isBlank()) throw IllegalStateException("请先填写 Base URL")
+        val result = when (provider.type) {
+            ProviderType.ANTHROPIC -> callAnthropic(settings, provider, model, system, user)
+            else -> callOpenAiCompatible(settings, provider, model, system, user)
+        }
+        result.text
+    }
+
     suspend fun testConnection(settings: AppSettings): Result2 = withContext(Dispatchers.IO) {
         val provider = settings.activeProvider ?: return@withContext Result2(false, "未选择 API 提供商", 0)
         val model = settings.activeModel ?: return@withContext Result2(false, "未选择模型", 0)

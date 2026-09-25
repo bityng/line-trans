@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.linetrans.app.data.DocRepository
 import com.linetrans.app.data.SettingsRepository
+import com.linetrans.app.data.WordbookRepository
 import com.linetrans.app.server.WebTerminalService
 import com.linetrans.app.ui.AppRoot
 import com.linetrans.app.ui.theme.LineTransTheme
@@ -14,6 +15,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         SettingsRepository.init(applicationContext)
         DocRepository.init(applicationContext)
+        WordbookRepository.init(applicationContext)
         if (SettingsRepository.settings.webServerAutoStart && !WebTerminalService.isRunning) {
             runCatching { WebTerminalService.start(applicationContext) }
         }

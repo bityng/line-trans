@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -14,8 +15,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,10 +114,13 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import com.linetrans.app.ai.DictionaryService
 import com.linetrans.app.ai.TranslationService
 import com.linetrans.app.data.DocRepository
 import com.linetrans.app.data.ExportManager
 import com.linetrans.app.data.SettingsRepository
+import com.linetrans.app.data.WordbookRepository
 import com.linetrans.app.model.ExportFormat
 import com.linetrans.app.model.TranslationDoc
 import com.linetrans.app.model.TranslationUnit
@@ -183,6 +190,10 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
     var memoryHits by remember(docId) { mutableIntStateOf(0) }
     var showFindReplace by remember(docId) { mutableStateOf(false) }
     var editSessionIndex by remember(docId) { mutableIntStateOf(-1) }
+    var lookupWord by remember(docId) { mutableStateOf<String?>(null) }
+    var lookupAnchor by remember(docId) { mutableStateOf(IntOffset.Zero) }
+    var lookupEntry by remember(docId) { mutableStateOf<DictionaryService.Entry?>(null) }
+    var lookupLoading by remember(docId) { mutableStateOf(false) }
 
     val undoStack = remember(docId) { mutableStateListOf<EditSnapshot>() }
     val redoStack = remember(docId) { mutableStateListOf<EditSnapshot>() }
@@ -366,6 +377,31 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
         DocRepository.save(doc, immediate = true)
         revision++
         notify("已切换为" + (if (newMode == UnitMode.SENTENCE) "逐句" else "逐行") + "模式")
+    }
+
+    /** 点词查义：先给缓存，再异步请求词典。 */
+    fun lookupAt(word: String, anchor: IntOffset) {
+        if (!SettingsRepository.settings.wordLookupEnabled) return
+        if (word.isBlank() || word.none { it.isLetter() }) return
+        lookupWord = word
+        lookupAnchor = anchor
+        val cached = DictionaryService.cached(word)
+        lookupEntry = cached
+        lookupLoading = cached == null
+        if (cached != null) return
+        val requested = word
+        scope.launch {
+            val entry = DictionaryService.lookup(SettingsRepository.settings, requested, service)
+            if (lookupWord == requested) {
+                lookupEntry = entry
+                lookupLoading = false
+            }
+        }
+    }
+
+    fun openUrl(url: String) {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            .onFailure { notify("无法打开浏览器") }
     }
 
     fun runAi(onFinished: (() -> Unit)? = null) {
@@ -723,7 +759,17 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
                     )
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (readOnly) "原文（只读）" else "原文", style = MaterialTheme.typography.labelLarge)
+                    val lookupOn = SettingsRepository.settings.wordLookupEnabled
+                    Text(
+                        when {
+                            readOnly && lookupOn -> "原文（只读 · 点词查义）"
+                            readOnly -> "原文（只读）"
+                            editableOriginal -> "原文（编辑中）"
+                            lookupOn -> "原文（点词查义）"
+                            else -> "原文"
+                        },
+                        style = MaterialTheme.typography.labelLarge
+                    )
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = { speak(currentUnit()?.source ?: "") }) {
                         Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "朗读原文", modifier = Modifier.size(20.dp))
@@ -743,23 +789,44 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
                         }
                     }
                 }
-                OutlinedTextField(
-                    value = currentUnit()?.source ?: "",
-                    onValueChange = { text ->
-                        if (editableOriginal) {
+                val sourceText = currentUnit()?.source ?: ""
+                if (editableOriginal && !readOnly) {
+                    OutlinedTextField(
+                        value = sourceText,
+                        onValueChange = { text ->
                             currentUnit()?.let { unit ->
                                 unit.source = text
                                 DocRepository.save(doc)
                                 revision++
                             }
+                        },
+                        placeholder = { Text("原文") },
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            WordLookupText(
+                                text = sourceText,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.fillMaxWidth(),
+                                onWordTap = { word, anchor -> lookupAt(word, anchor) }
+                            )
                         }
-                    },
-                    readOnly = !editableOriginal || readOnly,
-                    placeholder = { Text("原文") },
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    textStyle = MaterialTheme.typography.bodyLarge,
-                    shape = RoundedCornerShape(14.dp)
-                )
+                    }
+                }
             }
 
             if (!imeOpen) {
@@ -884,18 +951,40 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = translatedText,
-                    onValueChange = { text ->
-                        pushSnapshot()
-                        translatedText = text
-                        currentUnit()?.let { applyUnit(it, translation = text) }
-                    },
-                    placeholder = { Text("在这里输入译文") },
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    readOnly = readOnly,
-                    shape = RoundedCornerShape(14.dp)
-                )
+                if (readOnly) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            WordLookupText(
+                                text = translatedText.ifBlank { "（未翻译）" },
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.fillMaxWidth(),
+                                onWordTap = { word, anchor -> lookupAt(word, anchor) }
+                            )
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = translatedText,
+                        onValueChange = { text ->
+                            pushSnapshot()
+                            translatedText = text
+                            currentUnit()?.let { applyUnit(it, translation = text) }
+                        },
+                        placeholder = { Text("在这里输入译文") },
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                }
             }
 
             if (!imeOpen) {
@@ -993,6 +1082,30 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
             text = { Text("已处理完全部 " + doc.units.size + " " + unitLabel(mode) + "。") },
             confirmButton = { TextButton(onClick = { showDone = false; exit() }) { Text("返回主页") } },
             dismissButton = { TextButton(onClick = { showDone = false }) { Text("继续查看") } }
+        )
+    }
+
+    // 划词释义浮层
+    lookupWord?.let { word ->
+        WordDefinitionPopup(
+            word = word,
+            anchor = lookupAnchor,
+            entry = lookupEntry,
+            localEntry = WordbookRepository.find(word),
+            loading = lookupLoading,
+            onDismiss = { lookupWord = null },
+            onSpeak = { speak(it) },
+            onCopy = { copyToClipboard(it, "释义") },
+            onSaveToWordbook = { meaning ->
+                WordbookRepository.upsert(word, meaning, lookupEntry?.phonetic.orEmpty())
+                notify("已加入词库：" + word)
+            },
+            onRemoveFromWordbook = {
+                WordbookRepository.remove(word)
+                notify("已从词库移除：" + word)
+            },
+            onRetry = { lookupAt(word, lookupAnchor) },
+            onOpenUrl = { openUrl(it) }
         )
     }
 }

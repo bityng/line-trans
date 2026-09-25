@@ -166,6 +166,14 @@ data class AppSettings(
     var autoAdvance: Boolean = true,
     /** 相同原文自动复用已有译文。 */
     var translationMemory: Boolean = true,
+    /** 划词查词：触摸单词弹出释义。 */
+    var wordLookupEnabled: Boolean = true,
+    /** 词典来源：auto / oxford_web / oxford_api / wiktionary / ai。 */
+    var dictionarySource: String = "auto",
+    /** 用 AI 为英文释义补一条中文解释。 */
+    var dictionaryAiExplain: Boolean = true,
+    var oxfordAppId: String = "",
+    var oxfordAppKey: String = "",
 
     // —— 界面 ——
     var themeMode: ThemeMode = ThemeMode.SYSTEM,
