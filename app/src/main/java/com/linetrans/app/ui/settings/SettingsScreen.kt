@@ -1424,8 +1424,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.aboutTab(context: Con
         }
     }
     item {
-        SectionCard(title = "最近更新", subtitle = "v1.7.0", icon = Icons.Default.AutoAwesome) {
+        SectionCard(title = "最近更新", subtitle = "v1.7.1", icon = Icons.Default.AutoAwesome) {
             listOf(
+                "修复长文字撑破布局：文件夹名/句子序号过长时不再把按钮挤出卡片（改为自动换行与省略号）",
+                "查看模式重做：对照/仅原文/仅译文切换，底部翻页与朗读/复制按钮，切分方式只读展示",
+                "内置网页台左上角改用应用图标",
                 "逐句切分重写：支持缩写（Mr. / U.S. / e.g.）、小数点、网址、首字母缩写，省略号不再拆碎",
                 "段落内的排版换行会自动合并成一句（英文补空格、中日韩不补），空行才分段",
                 "网页端：长文档分窗口渲染（每批 60 句，滚动自动加载），上千句也不卡",

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -433,13 +434,15 @@ fun HomeScreen(onOpenDoc: (String, Int, Boolean) -> Unit, onOpenSettings: () -> 
                             TodayHeroCard(onReset = { SettingsRepository.resetDaily() })
                         }
                         item {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            FlowRow(
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 DocFilter.entries.forEach { f ->
                                     FilterChip(
                                         selected = filter == f,
                                         onClick = { filter = f },
-                                        label = { Text(f.label) },
-                                        modifier = Modifier.padding(end = 8.dp)
+                                        label = { Text(f.label, maxLines = 1) }
                                     )
                                 }
                             }
@@ -759,25 +762,30 @@ private fun DocCard(
                         Text(
                             doc.name,
                             style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f, fill = false),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                     Spacer(Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 用 FlowRow：文件夹名很长时换行，而不是把后面的标记挤出卡片
+                    FlowRow(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         MetaChip(doc.folder)
-                        Spacer(Modifier.width(6.dp))
                         MetaChip(if (doc.unitMode == UnitMode.SENTENCE) "逐句" else "逐行")
                         if (doc.starredCount > 0) {
-                            Spacer(Modifier.width(6.dp))
-                            Icon(
-                                Icons.Default.Star,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.tertiary
-                            )
-                            Spacer(Modifier.width(2.dp))
-                            Text(doc.starredCount.toString(), style = MaterialTheme.typography.labelSmall)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Star,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = MaterialTheme.colorScheme.tertiary
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Text(doc.starredCount.toString(), style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                     Spacer(Modifier.height(6.dp))
@@ -871,8 +879,9 @@ private fun MetaChip(text: String) {
             text,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.widthIn(max = 140.dp).padding(horizontal = 6.dp, vertical = 2.dp),
             maxLines = 1,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

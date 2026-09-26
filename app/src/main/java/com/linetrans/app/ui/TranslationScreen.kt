@@ -74,6 +74,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
@@ -194,6 +195,8 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
     var lookupAnchor by remember(docId) { mutableStateOf(IntOffset.Zero) }
     var lookupEntry by remember(docId) { mutableStateOf<DictionaryService.Entry?>(null) }
     var lookupLoading by remember(docId) { mutableStateOf(false) }
+    /** 查看模式的显示方式：0 对照 / 1 仅原文 / 2 仅译文 */
+    var readView by remember(docId) { mutableIntStateOf(0) }
 
     val undoStack = remember(docId) { mutableStateListOf<EditSnapshot>() }
     val redoStack = remember(docId) { mutableStateListOf<EditSnapshot>() }
@@ -670,9 +673,12 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
             ) {
                 Text(
                     "第 " + (currentIndex + 1) + " / " + doc.units.size + " " + unitLabel(mode),
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(8.dp))
                 Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = CircleShape) {
                     Text(
                         (stats.third * 100).roundToInt().toString() + "%",
@@ -681,7 +687,7 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
                     )
                 }
                 if (readOnly) {
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = CircleShape) {
                         Text(
                             "只读预览",
@@ -703,17 +709,44 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
 
             if (!imeOpen) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(
-                        selected = mode == UnitMode.SENTENCE,
-                        onClick = { switchMode(UnitMode.SENTENCE) },
-                        label = { Text("逐句") }
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    FilterChip(
-                        selected = mode == UnitMode.LINE,
-                        onClick = { switchMode(UnitMode.LINE) },
-                        label = { Text("逐行") }
-                    )
+                    if (readOnly) {
+                        // 查看模式：切分方式只展示不可改，改为切换显示内容
+                        Text(
+                            if (mode == UnitMode.SENTENCE) "逐句" else "逐行",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        FilterChip(
+                            selected = readView == 0,
+                            onClick = { readView = 0 },
+                            label = { Text("对照") }
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        FilterChip(
+                            selected = readView == 1,
+                            onClick = { readView = 1 },
+                            label = { Text("原文") }
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        FilterChip(
+                            selected = readView == 2,
+                            onClick = { readView = 2 },
+                            label = { Text("译文") }
+                        )
+                    } else {
+                        FilterChip(
+                            selected = mode == UnitMode.SENTENCE,
+                            onClick = { switchMode(UnitMode.SENTENCE) },
+                            label = { Text("逐句") }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(
+                            selected = mode == UnitMode.LINE,
+                            onClick = { switchMode(UnitMode.LINE) },
+                            label = { Text("逐行") }
+                        )
+                    }
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = {
                         currentUnit()?.let { unit ->
@@ -736,12 +769,20 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
                 }
             }
 
+            val showSource = !readOnly || readView != 2
+            val showTranslation = !readOnly || readView != 1
+
             // 原文
+            if (showSource) {
             Column(
                 Modifier
                     .fillMaxWidth()
                     .then(
-                        if (imeOpen) Modifier.height(128.dp) else Modifier.weight(splitFraction)
+                        when {
+                            imeOpen -> Modifier.height(128.dp)
+                            readOnly && !showTranslation -> Modifier.weight(1f)
+                            else -> Modifier.weight(splitFraction)
+                        }
                     )
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -754,7 +795,10 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
                             lookupOn -> "原文（点词查义）"
                             else -> "原文"
                         },
-                        style = MaterialTheme.typography.labelLarge
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = { speak(currentUnit()?.source ?: "") }) {
@@ -814,8 +858,9 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
                     }
                 }
             }
+            }
 
-            if (!imeOpen) {
+            if (!imeOpen && !readOnly) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     IconButton(onClick = {
                         dividerLocked = !dividerLocked
@@ -838,11 +883,16 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
             }
 
             // 译文
+            if (showTranslation) {
             Column(
                 Modifier
                     .fillMaxWidth()
                     .then(
-                        if (imeOpen) Modifier.weight(1f) else Modifier.weight(1f - splitFraction)
+                        when {
+                            imeOpen -> Modifier.weight(1f)
+                            readOnly && !showSource -> Modifier.weight(1f)
+                            else -> Modifier.weight(1f - splitFraction)
+                        }
                     )
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -972,8 +1022,46 @@ fun TranslationScreen(docId: String, startIndex: Int = 0, viewOnly: Boolean = fa
                     )
                 }
             }
+            }
 
-            if (!imeOpen) {
+            // 查看模式的底部操作条：翻页 / 朗读 / 复制对照，放在拇指更容易够到的位置
+            if (readOnly) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { goPrev() },
+                        enabled = currentIndex > 0,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("上一句")
+                    }
+                    IconButton(onClick = { speak(currentUnit()?.source ?: "") }) {
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "朗读原文")
+                    }
+                    IconButton(onClick = {
+                        val source = currentUnit()?.source ?: ""
+                        val target = translatedText
+                        copyToClipboard(if (target.isBlank()) source else source + "\n" + target, "对照")
+                    }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "复制对照")
+                    }
+                    Button(
+                        onClick = { goNext() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (currentIndex == doc.units.size - 1) "完成" else "下一句")
+                        Spacer(Modifier.width(4.dp))
+                        Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            if (!imeOpen && !readOnly) {
                 UsageBar(
                     usage = usage,
                     memoryHits = memoryHits,

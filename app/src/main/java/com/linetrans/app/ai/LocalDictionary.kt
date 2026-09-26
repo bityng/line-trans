@@ -186,28 +186,20 @@ object LocalDictionary {
     private fun parseImportLine(raw: String): String? {
         val line = raw.trimEnd()
         if (line.isBlank() || line.startsWith("#")) return null
-        var word = ""
-        var phonetic = ""
-        var meaning = ""
-        if (line.contains('\t')) {
+        val parsed: Triple<String, String, String>? = if (line.contains('\t')) {
             val parts = line.split('\t').map { it.trim() }
-            if (parts.size < 2) return null
-            word = parts[0]
-            if (parts.size >= 3) {
-                phonetic = parts[1]
-                meaning = parts.drop(2).joinToString(" ")
-            } else {
-                meaning = parts[1]
+            when {
+                parts.size < 2 -> null
+                parts.size >= 3 -> Triple(parts[0], parts[1], parts.drop(2).joinToString(" "))
+                else -> Triple(parts[0], "", parts[1])
             }
         } else if (line.contains(',')) {
             val parts = com.linetrans.app.util.TextParser.splitCsvLine(line).map { it.trim().trim('"') }
-            if (parts.size < 4) return null
-            word = parts[0]
-            phonetic = parts[1]
-            meaning = parts[3].ifBlank { parts[2] }
+            if (parts.size < 4) null else Triple(parts[0], parts[1], parts[3].ifBlank { parts[2] })
         } else {
-            return null
+            null
         }
+        val (word, phonetic, meaning) = parsed ?: return null
         if (word.isBlank() || meaning.isBlank()) return null
         // 只保留带中文的释义，避免把纯英文释义也塞进来
         if (meaning.none { it.code in 0x4E00..0x9FFF }) return null
